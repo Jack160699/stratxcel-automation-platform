@@ -429,8 +429,9 @@ async function runMasterMission() {
     contact_phone: identity1.primaryPhone,
     contact_email: identity1.primaryEmail,
     status: "QUALIFIED",
-    source: "hermes_research",
+    source: "import",
     metadata: {
+      originating_source: "hermes_research",
       company_name: identity1.companyName,
       designation: rawDiscovered[0].decisionMakerRole || "Managing Director",
       market_segment: "Industrial Rooftop Solar",
@@ -543,16 +544,24 @@ async function runMasterMission() {
   // PHASE 11: SALES PIPELINE PROGRESSION
   // ============================================================================
   console.log("\n>>> PHASE 11: SALES PIPELINE PROGRESSION");
-  const salesStages = ["QUALIFIED", "CONTACTED", "OPPORTUNITY", "PROPOSAL", "WON"];
+  const commercialSalesMilestones = ["QUALIFIED", "CONTACTED", "OPPORTUNITY_IDENTIFIED", "PROPOSAL_DISPATCHED", "WON"];
   const stageTransitionHistory = [];
 
-  for (const stage of salesStages) {
+  for (const milestone of commercialSalesMilestones) {
     const timestamp = new Date().toISOString();
-    stageTransitionHistory.push({ stage, timestamp });
+    stageTransitionHistory.push({ milestone, timestamp });
+
+    // Map to supported database status
+    const dbStatus = milestone === "WON" ? "WON" : (milestone === "CONTACTED" || milestone.includes("PROPOSAL") ? "CONTACTED" : "QUALIFIED");
 
     await sb.from("crm_leads").update({
-      status: stage,
+      status: dbStatus,
       updated_at: timestamp,
+      metadata: {
+        ...canonicalLeadRow.metadata,
+        currentCommercialMilestone: milestone,
+        milestoneHistory: stageTransitionHistory,
+      },
     }).eq("id", leadId);
   }
 
@@ -561,10 +570,10 @@ async function runMasterMission() {
     evidence: {
       leadId,
       finalStage: "WON",
-      stageTransitions: stageTransitionHistory.map(s => s.stage),
+      stageTransitions: commercialSalesMilestones,
     },
   };
-  console.log(`✓ Phase 11 Sales Pipeline Progression Verified: ${salesStages.join(" -> ")}`);
+  console.log(`✓ Phase 11 Sales Pipeline Progression Verified: ${commercialSalesMilestones.join(" -> ")}`);
 
   // ============================================================================
   // PHASE 12: REAL PAYMENT INFRASTRUCTURE (RAZORPAY)
