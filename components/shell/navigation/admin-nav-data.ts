@@ -68,7 +68,10 @@ export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
   },
   {
     label: "Settings",
-    items: [{ key: "team", label: "Team", href: "/admin/team", release: "v1", mode: "normal" }],
+    items: [
+      { key: "team", label: "Team", href: "/admin/team", release: "v1", mode: "normal" },
+      { key: "connectors", label: "Connectors", href: "/admin/connectors", release: "v1", mode: "normal" },
+    ],
   },
   // --- Technical Admin (master build brief section 16) ------------------
   {
@@ -89,7 +92,6 @@ export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
     items: [
       { key: "mcps", label: "MCP Infrastructure", href: "/admin/mcps", release: "v1", mode: "technical" },
       { key: "personal-connectors", label: "Personal Connectors", href: "/admin/personal-connectors", release: "v1", mode: "technical" },
-      { key: "connectors", label: "Platform Connectors", href: "/admin/connectors", release: "v1", mode: "technical" },
       { key: "integrations", label: "Client Integrations", href: "/admin/integrations", release: "v1", mode: "technical" },
     ],
   },

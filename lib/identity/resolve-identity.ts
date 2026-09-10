@@ -50,16 +50,18 @@ const resolveCanonicalIdentityCached = cache(
       if (process.env.NODE_ENV !== "production") {
         const cookieStore = await cookies();
         if (cookieStore.get("sx_dev_admin")?.value === "1") {
+          const devUserId = "9381030b-b14a-4551-a6e9-b5918f017e1b";
+          const devTenants = await listMyTenants(supabase, devUserId);
           return {
             state: "INTERNAL_STAFF",
-            userId: "00000000-0000-0000-0000-000000000001",
+            userId: devUserId,
             email: "founder@stratxcel.com",
             profileName: "Founder Admin",
             avatarUrl: null,
             planPromptSeenTenantIds: [],
             isStaff: true,
             workspaceMode: "admin",
-            tenants: [],
+            tenants: devTenants,
             supabase,
           };
         }

@@ -156,21 +156,27 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${instrumentSans.variable} ${inter.variable} ${outfit.variable} ${notoSansDevanagari.variable} h-full antialiased sx-theme-light`}
       suppressHydrationWarning
     >
-      <head>
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_JSON_LD) }}
-        />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(WEBSITE_JSON_LD) }}
-        />
-      </head>
+      <head />
+      <Script
+        id="sx-theme-boot"
+        strategy="beforeInteractive"
+        dangerouslySetInnerHTML={{
+          __html: `(function(){try{var t=localStorage.getItem("sx-theme");if(t==="dark"){document.documentElement.classList.remove("sx-theme-light");document.documentElement.classList.add("sx-theme-dark");}}catch(e){}})();`,
+        }}
+      />
+      <Script
+        id="org-json-ld"
+        type="application/ld+json"
+        strategy="afterInteractive"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_JSON_LD) }}
+      />
+      <Script
+        id="website-json-ld"
+        type="application/ld+json"
+        strategy="afterInteractive"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(WEBSITE_JSON_LD) }}
+      />
       <body className="min-h-full bg-sx-bg text-sx-text">
-        <Script
-          id="sx-theme-boot"
-          strategy="beforeInteractive"
-        >{`(function(){try{var t=localStorage.getItem("sx-theme");if(t==="dark"){document.documentElement.classList.remove("sx-theme-light");document.documentElement.classList.add("sx-theme-dark");}}catch(e){}})();`}</Script>
         <ThemeProvider>
           <ScrollRestoration />
           {children}
