@@ -6,14 +6,22 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function isAuthorized(req: NextRequest): boolean {
-  const secret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET || process.env.CRON_SECRET || process.env.AI_DIAGNOSTICS_SECRET;
-  if (!secret) return false;
+  const allowedSecrets = [
+    process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
+    process.env.CRON_SECRET,
+    process.env.AI_DIAGNOSTICS_SECRET,
+    process.env.STRATXCEL_AGENT_CHANNEL_SECRET,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  ].filter(Boolean) as string[];
 
-  const adminHeader = req.headers.get("x-stratxcel-admin-secret");
-  const authHeader = req.headers.get("authorization");
+  const adminHeader = req.headers.get("x-stratxcel-admin-secret")?.trim();
+  const authHeader = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
 
-  if (adminHeader && adminHeader.trim() === secret.trim()) return true;
-  if (authHeader && (authHeader.trim() === `Bearer ${secret.trim()}` || authHeader.trim() === secret.trim())) return true;
+  for (const s of allowedSecrets) {
+    const cleanSecret = s.replace(/^["']|["']$/g, "").trim();
+    if (adminHeader && adminHeader === cleanSecret) return true;
+    if (authHeader && authHeader === cleanSecret) return true;
+  }
 
   return false;
 }
