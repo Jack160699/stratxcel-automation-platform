@@ -98,7 +98,7 @@ export default async function CommandCenterPage() {
   }
 
   const [missions, approvals, newMessageCount, driveConnection] = await Promise.all([
-    listMissionsForTenant(ctx.supabase, active.tenantId, 6),
+    listMissionsForTenant(ctx.supabase, active.tenantId, 5),
     (async () => {
       try {
         requirePermission(active.role, "approval:decide");

@@ -10,10 +10,17 @@ export async function GET(
   { params }: { params: Promise<{ missionId: string }> }
 ) {
   const { missionId } = await params;
-  const tenantId = new URL(request.url).searchParams.get("tenantId");
+  let resolvedTenantId = new URL(request.url).searchParams.get("tenantId");
 
-  if (!tenantId) {
-    return Response.json({ error: "tenantId query param is required" }, { status: 400 });
+  const { supabase } = getTenantServiceContext();
+
+  if (!resolvedTenantId) {
+    const { data: m } = await supabase.from("missions").select("tenant_id").eq("id", missionId).maybeSingle();
+    resolvedTenantId = m?.tenant_id || null;
+  }
+
+  if (!resolvedTenantId) {
+    return Response.json({ error: "Mission not found or tenantId missing" }, { status: 404 });
   }
 
   let isDevAdmin = false;
@@ -24,7 +31,7 @@ export async function GET(
   }
 
   if (!isDevAdmin) {
-    const ctx = await requireTenantReadContext(tenantId);
+    const ctx = await requireTenantReadContext(resolvedTenantId);
     if (!ctx.ok) {
       return Response.json({ error: ctx.error }, { status: ctx.status });
     }
@@ -39,9 +46,7 @@ export async function GET(
     }
   }
 
-  // Use service client to read related tables (worker_heartbeats, approvals, etc.)
-  const { supabase } = getTenantServiceContext();
-  const data = await fetchMissionControlData(supabase, missionId, tenantId);
+  const data = await fetchMissionControlData(supabase, missionId, resolvedTenantId);
 
   if (!data) {
     return Response.json({ error: "Mission not found or unauthorized" }, { status: 404 });

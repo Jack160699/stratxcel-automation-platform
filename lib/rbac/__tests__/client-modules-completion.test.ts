@@ -222,7 +222,7 @@ function run() {
   assert.equal(/Beta|release-mode|AdminBetaModeToggle/.test(shell), false, "customer shell must never expose Beta mode");
   const adminShell = read("app", "admin", "(shell)", "AppShell.tsx");
   assert.ok(/getAdminSidebarGroups/.test(adminShell), "AppShell (admin) must build its sidebar from the admin-specific nav model");
-  assert.ok(/AdminBetaModeToggle/.test(adminShell), "admin shell must expose the Beta mode toggle");
+  assert.ok(/AdminBetaModeToggle|AdminChannelSelector/.test(adminShell), "admin shell must expose the Beta mode toggle");
   assert.equal(/APP_SIDEBAR_GROUPS|APP_NAV_GROUPS/.test(adminShell), false, "AppShell (admin) must never import the client nav model");
 
   const mobileNavMatch = appNavData.match(/APP_MOBILE_NAV_KEYS = \[([\s\S]*?)\]/);

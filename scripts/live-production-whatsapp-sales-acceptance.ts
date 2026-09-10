@@ -96,20 +96,15 @@ async function main() {
       providerMessageId: turn6InboundId,
       from: contactPhone,
       phoneNumberId: activePhoneNumberId,
-      timestamp: new Date().toISOString(),
+      wabaId: binding?.waba_id ?? null,
+      displayPhoneNumber: binding?.display_phone_number ?? null,
+      timestampIso: new Date().toISOString(),
       kind: "text",
       body: turn6Body,
+      mediaId: null,
+      mimeType: null,
     },
-    binding: {
-      id: binding.id,
-      tenant_id: tenantId,
-      phone_number_id: activePhoneNumberId,
-      waba_id: binding.waba_id,
-      display_phone_number: binding.display_phone_number,
-      inbound_enabled: true,
-      outbound_enabled: true,
-      shadow_mode: false,
-    },
+    phoneBindingId: binding?.id ?? null,
   });
 
   console.log(`[HERMES PROCESSOR] Lead ID: ${turn6Result.leadId}`);
@@ -126,7 +121,7 @@ async function main() {
     });
 
     console.log(`[META DISPATCH] Send Result:`, JSON.stringify(sendResult, null, 2));
-    turn6OutboundId = sendResult.providerId;
+    turn6OutboundId = (sendResult as any).providerId;
   }
 
   // -------------------------------------------------------------------------
@@ -147,26 +142,21 @@ async function main() {
       providerMessageId: turn7InboundId,
       from: contactPhone,
       phoneNumberId: activePhoneNumberId,
-      timestamp: new Date().toISOString(),
+      wabaId: binding?.waba_id ?? null,
+      displayPhoneNumber: binding?.display_phone_number ?? null,
+      timestampIso: new Date().toISOString(),
       kind: "text",
       body: turn7Body,
+      mediaId: null,
+      mimeType: null,
     },
-    binding: {
-      id: binding.id,
-      tenant_id: tenantId,
-      phone_number_id: activePhoneNumberId,
-      waba_id: binding.waba_id,
-      display_phone_number: binding.display_phone_number,
-      inbound_enabled: true,
-      outbound_enabled: true,
-      shadow_mode: false,
-    },
+    phoneBindingId: binding?.id ?? null,
   });
 
   console.log(`[OPT-OUT RESULT] optedOut: ${turn7Result.optedOut}`);
   console.log(`[OPT-OUT RESULT] proposedResponse: ${turn7Result.proposedResponse} (Should be null — suppressed)`);
-  console.log(`[OPT-OUT RESULT] rulePath: ${turn7Result.rulePath}`);
-  console.log(`[OPT-OUT RESULT] executionTrace: ${JSON.stringify(turn7Result.executionTrace)}`);
+  console.log(`[OPT-OUT RESULT] rulePath: ${(turn7Result as any).rulePath}`);
+  console.log(`[OPT-OUT RESULT] executionTrace: ${JSON.stringify((turn7Result as any).executionTrace)}`);
 
   // Verify no outbound was sent for opt-out
   if (turn7Result.proposedResponse === null) {

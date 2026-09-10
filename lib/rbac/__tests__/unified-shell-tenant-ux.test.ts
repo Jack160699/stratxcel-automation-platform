@@ -201,7 +201,6 @@ function run() {
     [["platform", "wallet"], "/admin/finance"],
     [["platform", "whatsapp"], "/admin/integrations"],
     [["platform"], "/admin/system"],
-    [["inbox"], "/admin/leads"],
   ];
   for (const [segments, destination] of LEGACY_REDIRECTS) {
     const source = read("app", "admin", "(shell)", ...segments, "page.tsx");
@@ -210,6 +209,7 @@ function run() {
       `legacy /admin/${segments.join("/")} must redirect to ${destination}, not duplicate the page`
     );
   }
+  assert.ok(exists("app", "admin", "(shell)", "inbox", "page.tsx"), "/admin/inbox must exist as the canonical Founder Inbox");
   // /admin/social is untouched — must remain a sibling, not nested inside the new (shell) group.
   assert.ok(exists("app", "admin", "(shell)", "social", "layout.tsx"), "/admin/social must live inside the canonical shell route group");
   assert.equal(exists("app", "admin", "social"), false, "the independent Social application subtree must be retired");

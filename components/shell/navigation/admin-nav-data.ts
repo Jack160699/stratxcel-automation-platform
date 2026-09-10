@@ -35,6 +35,7 @@ export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
       { key: "overview", label: "Home", href: "/admin", release: "v1", mode: "normal" },
       { key: "inbox", label: "Founder Inbox", href: "/admin/inbox", release: "v1", mode: "normal" },
       { key: "office", label: "Office", href: "/admin/office", release: "v1", mode: "normal" },
+      { key: "missions", label: "Missions", href: "/admin/missions", release: "v1", mode: "normal" },
       { key: "admin-copilot", label: "Admin Copilot", href: "/admin/copilot", release: "v1", mode: "normal" },
     ],
   },
@@ -80,7 +81,6 @@ export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
   {
     label: "Missions",
     items: [
-      { key: "missions", label: "All Missions", href: "/admin/missions", release: "v1", mode: "technical" },
       { key: "hermes", label: "Hermes Mission Control", href: "/admin/hermes", release: "v2", mode: "technical" },
     ],
   },
@@ -120,6 +120,6 @@ export const ADMIN_NAV_GROUPS_DATA: NavGroupData[] = [
 // contains "overview"/"leads"/"approvals"/"clients", so the old single
 // list resolved to zero items whenever viewMode was "technical").
 export const ADMIN_MOBILE_NAV_KEYS: Record<"normal" | "technical", readonly string[]> = {
-  normal: ["overview", "leads", "approvals", "clients"],
-  technical: ["missions", "system", "integrations", "operating-brain"],
+  normal: ["overview", "missions", "leads", "approvals", "clients"],
+  technical: ["hermes", "system", "integrations", "operating-brain"],
 };

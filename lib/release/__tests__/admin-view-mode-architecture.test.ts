@@ -53,11 +53,11 @@ function run() {
   // Master build brief sections 15-16: these specific real destinations
   // belong in Technical mode, never Normal.
   const technicalHrefs = new Set(flattenNavGroups(technicalAdmin).map((i) => i.href));
-  for (const href of ["/admin/missions", "/admin/system", "/admin/audit", "/admin/integrations", "/admin/connectors", "/admin/personal-connectors", "/admin/operations", "/admin/operating-brain", "/admin/hermes", "/admin/capabilities"]) {
+  for (const href of ["/admin/system", "/admin/audit", "/admin/integrations", "/admin/connectors", "/admin/personal-connectors", "/admin/operations", "/admin/operating-brain", "/admin/hermes", "/admin/capabilities"]) {
     assert.ok(technicalHrefs.has(href), `${href} must be classified Technical`);
   }
   const normalHrefs = new Set(flattenNavGroups(normalAdmin).map((i) => i.href));
-  for (const href of ["/admin", "/admin/office", "/admin/clients", "/admin/leads", "/admin/finance", "/admin/approvals", "/admin/handoffs", "/admin/social", "/admin/team"]) {
+  for (const href of ["/admin", "/admin/office", "/admin/missions", "/admin/clients", "/admin/leads", "/admin/finance", "/admin/approvals", "/admin/handoffs", "/admin/social", "/admin/team"]) {
     assert.ok(normalHrefs.has(href), `${href} must be classified Normal`);
   }
   // No functionality lost in the split -- every real item from before the

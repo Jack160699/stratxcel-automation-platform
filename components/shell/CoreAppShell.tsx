@@ -80,7 +80,7 @@ export function CoreAppShell({
           footer={sidebarFooter}
         />
       </div>
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col pb-24 md:pb-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden pb-24 md:pb-0">
         <TopCommandBar
           brand={<BrandMark product={product} customer={isCustomer} />}
           context={topBarContext}
@@ -90,7 +90,7 @@ export function CoreAppShell({
           showSearch={product !== "App"}
           customer={isCustomer}
         />
-        <ScrollToTopMain className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8 w-full max-w-full">{children}</ScrollToTopMain>
+        <ScrollToTopMain className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8 w-full max-w-full">{children}</ScrollToTopMain>
       </div>
       <MobileBottomNav items={mobileNavItems} activeKey={activeKey} moreGroups={mobileMoreGroups} customer={isCustomer} />
     </div>

@@ -40,7 +40,10 @@ function run() {
   //        state, and escalation happens before a shadow reply is composed
   const processInboundSource = readCode("packages", "whatsapp", "src", "conversation", "process-inbound.ts");
   const escalationIdx = processInboundSource.indexOf("checkEscalation(");
-  const composeIdx = processInboundSource.indexOf("composeProposedResponse(compiled)");
+  const composeIdx =
+    processInboundSource.indexOf("salesEngine.processInboundTurn(") > -1
+      ? processInboundSource.indexOf("salesEngine.processInboundTurn(")
+      : processInboundSource.indexOf("composeProposedResponse(compiled)");
   assert.ok(escalationIdx > -1 && composeIdx > -1 && escalationIdx < composeIdx, "escalation must be checked before a shadow response is composed");
   assert.ok(/createHumanHandoff\(/.test(processInboundSource), "an escalation must create a real human handoff");
   assert.ok(/recordOptOut\(/.test(processInboundSource), "opt-out must persist real consent state, not just a pipeline status");

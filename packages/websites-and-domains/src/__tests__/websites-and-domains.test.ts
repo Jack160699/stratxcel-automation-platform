@@ -84,7 +84,7 @@ async function runWebsitesAndDomainsTests() {
   // 6. Vercel domain attachment check — with no VERCEL_AUTH_TOKEN configured
   //    (this test's environment), the result must be an honest "not
   //    configured", never a fabricated "it worked".
-  const vercelRes = await attachDomainToVercel("acmedental.com");
+  const vercelRes = await attachDomainToVercel("acmedental.com", "prj_test", "");
   assert.equal(vercelRes.domain, "acmedental.com");
   assert.equal(vercelRes.verified, false, "must never claim verified without a real Vercel API response");
   assert.equal(vercelRes.sslActive, false, "must never claim SSL is active without a real Vercel API response");

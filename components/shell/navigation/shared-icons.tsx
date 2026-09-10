@@ -22,6 +22,7 @@ import {
   UserCheck,
   Building2,
   Inbox,
+  Zap,
 } from "lucide-react";
 
 /**
@@ -43,7 +44,7 @@ export const NAV_ICONS: Record<string, ReactNode> = {
   home: <GridIcon />,
   overview: <GridIcon />,
   copilot: <CopilotIcon />,
-  missions: <DocIcon />,
+  missions: <ZapIcon />,
   approvals: <CheckIcon />,
   content: <MegaphoneIcon />,
   brand: <SparkIcon />,
@@ -143,4 +144,7 @@ export function PulseIcon() {
 }
 export function InboxIcon() {
   return <Inbox size={ICON_SIZE} strokeWidth={ICON_STROKE} />;
+}
+export function ZapIcon() {
+  return <Zap size={ICON_SIZE} strokeWidth={ICON_STROKE} />;
 }
