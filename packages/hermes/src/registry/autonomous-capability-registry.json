@@ -16,17 +16,42 @@
       "transport": "stdio",
       "environment": "WINDOWS",
       "authentication": "Persistent user profile (D:/pw-profile)",
-      "permissions": ["browser:navigate", "browser:click", "browser:type", "browser:snapshot"],
+      "permissions": [
+        "browser:navigate",
+        "browser:click",
+        "browser:type",
+        "browser:snapshot"
+      ],
       "status": "A_CONNECTED_AND_VERIFIED",
       "verification_status": "VERIFIED_REAL_EXECUTION",
       "verification_evidence": "Called browser_tabs(list) -> Active tab 0: Office — Stratxcel Admin (https://www.stratxcel.in/admin/office). Called browser_snapshot -> Captured live DOM.",
-      "allowed_actions": ["navigate", "click", "type", "press_key", "snapshot", "evaluate", "tabs", "screenshot", "wait_for"],
-      "restricted_actions": ["bypassing_enterprise_sso_without_session", "clearing_profile_cookies"],
-      "dependencies": ["npx", "@playwright/mcp@latest", "D:/pw-profile"],
+      "allowed_actions": [
+        "navigate",
+        "click",
+        "type",
+        "press_key",
+        "snapshot",
+        "evaluate",
+        "tabs",
+        "screenshot",
+        "wait_for"
+      ],
+      "restricted_actions": [
+        "bypassing_enterprise_sso_without_session",
+        "clearing_profile_cookies"
+      ],
+      "dependencies": [
+        "npx",
+        "@playwright/mcp@latest",
+        "D:/pw-profile"
+      ],
       "cost": "FREE_LOCAL_RUNTIME",
       "rate_limits": "Local process limits (~10 actions/sec)",
       "tenant_scope": "PLATFORM",
-      "fallbacks": ["browser.cdp.port_9222", "direct_http_fetch"]
+      "fallbacks": [
+        "browser.cdp.port_9222",
+        "direct_http_fetch"
+      ]
     },
     {
       "capability_name": "browser.automation.cdp_port_9222",
@@ -38,17 +63,31 @@
       "transport": "http_and_ws",
       "environment": "WINDOWS",
       "authentication": "Founder interactive Chrome session",
-      "permissions": ["cdp:inspect", "cdp:control"],
+      "permissions": [
+        "cdp:inspect",
+        "cdp:control"
+      ],
       "status": "A_CONNECTED_AND_VERIFIED",
       "verification_status": "VERIFIED_REAL_EXECUTION",
       "verification_evidence": "Queried http://127.0.0.1:9222/json/version -> Chrome/152.0.7977.76 (HTTP 200). Queried /json/list -> 8 active pages including Supabase Dashboard.",
-      "allowed_actions": ["page_inspection", "cdp_telemetry", "tab_enumeration"],
-      "restricted_actions": ["credential_extraction", "cookie_scraping"],
-      "dependencies": ["Chrome running with --remote-debugging-port=9222"],
+      "allowed_actions": [
+        "page_inspection",
+        "cdp_telemetry",
+        "tab_enumeration"
+      ],
+      "restricted_actions": [
+        "credential_extraction",
+        "cookie_scraping"
+      ],
+      "dependencies": [
+        "Chrome running with --remote-debugging-port=9222"
+      ],
       "cost": "FREE_LOCAL_RUNTIME",
       "rate_limits": "Unbounded local",
       "tenant_scope": "PLATFORM",
-      "fallbacks": ["browser.automation.playwright_mcp"]
+      "fallbacks": [
+        "browser.automation.playwright_mcp"
+      ]
     },
     {
       "capability_name": "database.multi_tenant_datastore",
@@ -60,17 +99,37 @@
       "transport": "rest_client",
       "environment": "CLOUD_AND_WINDOWS",
       "authentication": "SUPABASE_SERVICE_ROLE_KEY",
-      "permissions": ["tenants:read", "missions:read_write", "crm_leads:read_write", "brand_brains:read", "owner_sources:read"],
+      "permissions": [
+        "tenants:read",
+        "missions:read_write",
+        "crm_leads:read_write",
+        "brand_brains:read",
+        "owner_sources:read"
+      ],
       "status": "A_CONNECTED_AND_VERIFIED",
       "verification_status": "VERIFIED_REAL_EXECUTION",
       "verification_evidence": "Queried live Supabase instance uccqlgeghkwzujeeymua.supabase.co: tenants (1 row, Stratxcel), missions (42 rows), crm_leads (73 rows), owner_events (1519 rows), brand_brains (1 row).",
-      "allowed_actions": ["select", "insert", "update", "upsert", "bounded_rpc"],
-      "restricted_actions": ["destructive_drop", "bypassing_tenant_isolation_on_client_routes"],
-      "dependencies": ["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"],
+      "allowed_actions": [
+        "select",
+        "insert",
+        "update",
+        "upsert",
+        "bounded_rpc"
+      ],
+      "restricted_actions": [
+        "destructive_drop",
+        "bypassing_tenant_isolation_on_client_routes"
+      ],
+      "dependencies": [
+        "NEXT_PUBLIC_SUPABASE_URL",
+        "SUPABASE_SERVICE_ROLE_KEY"
+      ],
       "cost": "INCLUDED_SUPABASE_SUBSCRIPTION",
       "rate_limits": "PostgREST connection pool limits",
       "tenant_scope": "BOTH",
-      "fallbacks": ["pg_pooler_direct"]
+      "fallbacks": [
+        "pg_pooler_direct"
+      ]
     },
     {
       "capability_name": "ai.multimodal_reasoning.gemini",
@@ -82,17 +141,32 @@
       "transport": "rest_client",
       "environment": "CLOUD_API",
       "authentication": "GEMINI_API_KEY",
-      "permissions": ["models:list", "models:generateContent"],
+      "permissions": [
+        "models:list",
+        "models:generateContent"
+      ],
       "status": "A_CONNECTED_AND_VERIFIED",
       "verification_status": "VERIFIED_REAL_EXECUTION",
       "verification_evidence": "Queried https://generativelanguage.googleapis.com/v1beta/models -> HTTP 200, 50 available models (gemini-2.5-flash, gemini-2.5-pro, etc.).",
-      "allowed_actions": ["text_generation", "chat", "structured_json_output", "multimodal_vision"],
-      "restricted_actions": ["unmetered_bulk_generation_without_budget"],
-      "dependencies": ["GEMINI_API_KEY in .env.local"],
+      "allowed_actions": [
+        "text_generation",
+        "chat",
+        "structured_json_output",
+        "multimodal_vision"
+      ],
+      "restricted_actions": [
+        "unmetered_bulk_generation_without_budget"
+      ],
+      "dependencies": [
+        "GEMINI_API_KEY in .env.local"
+      ],
       "cost": "Google API token pricing ($0.075 / 1M input tokens on Flash)",
       "rate_limits": "Tier 1 quota (~1,000 RPM)",
       "tenant_scope": "PLATFORM",
-      "fallbacks": ["cloudflare.workers_ai", "codecraft.api"]
+      "fallbacks": [
+        "cloudflare.workers_ai",
+        "codecraft.api"
+      ]
     },
     {
       "capability_name": "ai.edge_image_inference.cloudflare",
@@ -104,17 +178,30 @@
       "transport": "rest_client",
       "environment": "CLOUD_API",
       "authentication": "CLOUDFLARE_API_TOKEN",
-      "permissions": ["workers_ai:read", "workers_ai:write"],
+      "permissions": [
+        "workers_ai:read",
+        "workers_ai:write"
+      ],
       "status": "A_CONNECTED_AND_VERIFIED",
       "verification_status": "VERIFIED_REAL_EXECUTION",
       "verification_evidence": "Verified token via GET https://api.cloudflare.com/client/v4/user/tokens/verify -> HTTP 200, message: 'This API Token is valid and active'.",
-      "allowed_actions": ["image_generation", "edge_inference"],
-      "restricted_actions": ["zone_dns_modification"],
-      "dependencies": ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"],
+      "allowed_actions": [
+        "image_generation",
+        "edge_inference"
+      ],
+      "restricted_actions": [
+        "zone_dns_modification"
+      ],
+      "dependencies": [
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_API_TOKEN"
+      ],
       "cost": "Cloudflare Workers AI Neurons",
       "rate_limits": "Cloudflare standard API rate limits",
       "tenant_scope": "PLATFORM",
-      "fallbacks": ["ai.multimodal_reasoning.gemini"]
+      "fallbacks": [
+        "ai.multimodal_reasoning.gemini"
+      ]
     },
     {
       "capability_name": "engineering.git_version_control",
@@ -126,17 +213,33 @@
       "transport": "cli_bridge",
       "environment": "WINDOWS",
       "authentication": "Windows Git Credential Manager",
-      "permissions": ["git:read", "git:commit", "git:branch"],
+      "permissions": [
+        "git:read",
+        "git:commit",
+        "git:branch"
+      ],
       "status": "A_CONNECTED_AND_VERIFIED",
       "verification_status": "VERIFIED_REAL_EXECUTION",
       "verification_evidence": "Ran git log -> successfully inspected recent commits on branch experiment/codecraft-test, clean commit history.",
-      "allowed_actions": ["log", "status", "diff", "branch", "commit"],
-      "restricted_actions": ["force_push_to_main"],
-      "dependencies": ["git in PATH"],
+      "allowed_actions": [
+        "log",
+        "status",
+        "diff",
+        "branch",
+        "commit"
+      ],
+      "restricted_actions": [
+        "force_push_to_main"
+      ],
+      "dependencies": [
+        "git in PATH"
+      ],
       "cost": "FREE_LOCAL_RUNTIME",
       "rate_limits": "None",
       "tenant_scope": "PLATFORM",
-      "fallbacks": ["github.rest_api"]
+      "fallbacks": [
+        "github.rest_api"
+      ]
     },
     {
       "capability_name": "engineering.github_cloud_repo",
@@ -148,17 +251,35 @@
       "transport": "rest_client",
       "environment": "CLOUD_API",
       "authentication": "GITHUB_TOKEN (Personal Access Token - User Jack160699)",
-      "permissions": ["repo", "workflow", "gist", "read:org"],
+      "permissions": [
+        "repo",
+        "workflow",
+        "gist",
+        "read:org"
+      ],
       "status": "A_CONNECTED_AND_VERIFIED",
       "verification_status": "VERIFIED_REAL_EXECUTION",
       "verification_evidence": "Queried GET https://api.github.com/user -> HTTP 200, user: Jack160699, verified scopes: repo, workflow, read:org, gist.",
-      "allowed_actions": ["read_repo", "create_branch", "push_commits", "create_pr", "list_issues"],
-      "restricted_actions": ["delete_repository", "modifying_org_billing"],
-      "dependencies": ["GITHUB_TOKEN in .env.local"],
+      "allowed_actions": [
+        "read_repo",
+        "create_branch",
+        "push_commits",
+        "create_pr",
+        "list_issues"
+      ],
+      "restricted_actions": [
+        "delete_repository",
+        "modifying_org_billing"
+      ],
+      "dependencies": [
+        "GITHUB_TOKEN in .env.local"
+      ],
       "cost": "FREE_GITHUB_DEVELOPER",
       "rate_limits": "5,000 requests/hour",
       "tenant_scope": "PLATFORM",
-      "fallbacks": ["engineering.git_version_control"]
+      "fallbacks": [
+        "engineering.git_version_control"
+      ]
     },
     {
       "capability_name": "crm.grounded_lead_discovery",
@@ -170,17 +291,32 @@
       "transport": "internal_engine",
       "environment": "WINDOWS_AND_CLOUD",
       "authentication": "Internal engine execution with Supabase service client",
-      "permissions": ["leads:discover", "crm_leads:write"],
+      "permissions": [
+        "leads:discover",
+        "crm_leads:write"
+      ],
       "status": "A_CONNECTED_AND_VERIFIED",
       "verification_status": "VERIFIED_REAL_EXECUTION",
       "verification_evidence": "Executed node scripts/test-autonomous-company-e2e.mjs -> 7/7 suites passed; live verified in crm_leads with genuine provenance and deduplication hashes.",
-      "allowed_actions": ["discover_grounded_leads", "score_qualification", "deduplicate_against_db", "persist_to_crm"],
-      "restricted_actions": ["synthesizing_fictional_prospects"],
-      "dependencies": ["Supabase crm_leads table", "packages/workforce-core"],
+      "allowed_actions": [
+        "discover_grounded_leads",
+        "score_qualification",
+        "deduplicate_against_db",
+        "persist_to_crm"
+      ],
+      "restricted_actions": [
+        "synthesizing_fictional_prospects"
+      ],
+      "dependencies": [
+        "Supabase crm_leads table",
+        "packages/workforce-core"
+      ],
       "cost": "ZERO_INCREMENTAL",
       "rate_limits": "Database throughput limited",
       "tenant_scope": "COMPANY",
-      "fallbacks": ["browser.automation.playwright_mcp"]
+      "fallbacks": [
+        "browser.automation.playwright_mcp"
+      ]
     },
     {
       "capability_name": "hermes.ceo_executive_brain",
@@ -192,17 +328,33 @@
       "transport": "internal_engine",
       "environment": "WINDOWS_AND_CLOUD",
       "authentication": "Internal engine execution",
-      "permissions": ["hermes:orchestrate", "missions:manage"],
+      "permissions": [
+        "hermes:orchestrate",
+        "missions:manage"
+      ],
       "status": "A_CONNECTED_AND_VERIFIED",
       "verification_status": "VERIFIED_REAL_EXECUTION",
       "verification_evidence": "Executed E2E suite: Decomposed natural language directives across 5 verticals into hermes.ceo_objective; executed multi-cycle closed loops with strict revenue truth.",
-      "allowed_actions": ["intent_decomposition", "resource_routing", "multi_cycle_replanning", "objective_ownership_ledger"],
-      "restricted_actions": ["crediting_unpaid_revenue_to_cash_ledger"],
-      "dependencies": ["packages/hermes", "packages/workforce-core", "packages/connectors"],
+      "allowed_actions": [
+        "intent_decomposition",
+        "resource_routing",
+        "multi_cycle_replanning",
+        "objective_ownership_ledger"
+      ],
+      "restricted_actions": [
+        "crediting_unpaid_revenue_to_cash_ledger"
+      ],
+      "dependencies": [
+        "packages/hermes",
+        "packages/workforce-core",
+        "packages/connectors"
+      ],
       "cost": "ZERO_INTERNAL",
       "rate_limits": "Node runtime",
       "tenant_scope": "BOTH",
-      "fallbacks": ["human_handoff"]
+      "fallbacks": [
+        "human_handoff"
+      ]
     },
     {
       "capability_name": "cloud.aws_infrastructure",
@@ -214,17 +366,33 @@
       "transport": "cli_bridge",
       "environment": "AWS_AP_SOUTH_1",
       "authentication": "AWS CLI SSO / IAM credentials",
-      "permissions": ["ec2:DescribeInstances", "ssm:SendCommand", "logs:GetLogEvents"],
+      "permissions": [
+        "ec2:DescribeInstances",
+        "ssm:SendCommand",
+        "logs:GetLogEvents"
+      ],
       "status": "E_REQUIRES_MANUAL_CREDENTIAL",
       "verification_status": "UNVERIFIED_SESSION_EXPIRED",
       "verification_evidence": "Ran aws sts get-caller-identity -> Error: 'Your session has expired. Please reauthenticate using aws login.'",
-      "allowed_actions": ["describe_instances", "ssm_command", "get_logs"],
-      "restricted_actions": ["instance_termination", "iam_modification"],
-      "dependencies": ["AWS CLI installed", "Active AWS SSO login session"],
+      "allowed_actions": [
+        "describe_instances",
+        "ssm_command",
+        "get_logs"
+      ],
+      "restricted_actions": [
+        "instance_termination",
+        "iam_modification"
+      ],
+      "dependencies": [
+        "AWS CLI installed",
+        "Active AWS SSO login session"
+      ],
       "cost": "EC2 t4g/t3 instance running cost (~$15-$30/mo)",
       "rate_limits": "AWS API limits",
       "tenant_scope": "PLATFORM",
-      "fallbacks": ["Founder Computer Chrome AWS Management Console"]
+      "fallbacks": [
+        "Founder Computer Chrome AWS Management Console"
+      ]
     },
     {
       "capability_name": "hosting.vercel_deployments",
@@ -236,17 +404,31 @@
       "transport": "rest_client",
       "environment": "CLOUD_API",
       "authentication": "VERCEL_AUTH_TOKEN",
-      "permissions": ["deployments:read", "deployments:write", "domains:read"],
+      "permissions": [
+        "deployments:read",
+        "deployments:write",
+        "domains:read"
+      ],
       "status": "E_REQUIRES_MANUAL_CREDENTIAL",
       "verification_status": "UNVERIFIED_TOKEN_INVALID",
       "verification_evidence": "Queried GET https://api.vercel.com/v9/projects with VERCEL_AUTH_TOKEN and CLI auth.json -> HTTP 403 Forbidden: 'invalidToken: true'.",
-      "allowed_actions": ["inspect_deployment", "verify_domain", "deploy_preview"],
-      "restricted_actions": ["promoting_to_production_without_founder_confirmation"],
-      "dependencies": ["Valid VERCEL_AUTH_TOKEN from Vercel dashboard"],
+      "allowed_actions": [
+        "inspect_deployment",
+        "verify_domain",
+        "deploy_preview"
+      ],
+      "restricted_actions": [
+        "promoting_to_production_without_founder_confirmation"
+      ],
+      "dependencies": [
+        "Valid VERCEL_AUTH_TOKEN from Vercel dashboard"
+      ],
       "cost": "Vercel Pro/Hobby tier",
       "rate_limits": "Vercel REST API rate limits",
       "tenant_scope": "PLATFORM",
-      "fallbacks": ["Founder Computer Chrome Vercel Dashboard"]
+      "fallbacks": [
+        "Founder Computer Chrome Vercel Dashboard"
+      ]
     },
     {
       "capability_name": "payments.razorpay",
@@ -258,17 +440,31 @@
       "transport": "rest_client",
       "environment": "CLOUD_API",
       "authentication": "RAZORPAY_KEY_ID & RAZORPAY_KEY_SECRET",
-      "permissions": ["plans:read", "payment_links:write", "subscriptions:write"],
+      "permissions": [
+        "plans:read",
+        "payment_links:write",
+        "subscriptions:write"
+      ],
       "status": "E_REQUIRES_MANUAL_CREDENTIAL",
       "verification_status": "UNVERIFIED_AUTH_FAILED",
       "verification_evidence": "Queried GET https://api.razorpay.com/v1/plans with process test keys and production keys -> HTTP 401: 'BAD_REQUEST_ERROR: Authentication failed'.",
-      "allowed_actions": ["create_payment_link", "create_subscription", "fetch_payment_status"],
-      "restricted_actions": ["direct_account_refunds_without_audit"],
-      "dependencies": ["Active Razorpay API Key ID and Secret in environment"],
+      "allowed_actions": [
+        "create_payment_link",
+        "create_subscription",
+        "fetch_payment_status"
+      ],
+      "restricted_actions": [
+        "direct_account_refunds_without_audit"
+      ],
+      "dependencies": [
+        "Active Razorpay API Key ID and Secret in environment"
+      ],
       "cost": "2% per transaction + GST",
       "rate_limits": "Razorpay standard API rate limits",
       "tenant_scope": "BOTH",
-      "fallbacks": ["manual_bank_transfer_invoice"]
+      "fallbacks": [
+        "manual_bank_transfer_invoice"
+      ]
     },
     {
       "capability_name": "messaging.whatsapp_cloud",
@@ -280,17 +476,32 @@
       "transport": "rest_client",
       "environment": "CLOUD_API",
       "authentication": "WHATSAPP_TOKEN & WHATSAPP_PHONE_NUMBER_ID",
-      "permissions": ["whatsapp_business_messaging", "whatsapp_business_management"],
+      "permissions": [
+        "whatsapp_business_messaging",
+        "whatsapp_business_management"
+      ],
       "status": "E_REQUIRES_MANUAL_CREDENTIAL",
       "verification_status": "PARTIALLY_VERIFIED_WEBHOOK_LIVE_OUTBOUND_DISABLED",
       "verification_evidence": "GET webhook handshake live HTTP 200 on www.stratxcel.in/api/platform/whatsapp/webhook. Outbound disabled: WHATSAPP_TOKEN is placeholder (len=11), WHATSAPP_INTEGRATION_MODE=disabled.",
-      "allowed_actions": ["receive_webhooks", "route_commands_in_simulation"],
-      "restricted_actions": ["sending_live_customer_outbound_without_real_token"],
-      "dependencies": ["Meta System User Permanent Token", "Verified WABA Phone Number ID", "Meta Business Manager Verification"],
+      "allowed_actions": [
+        "receive_webhooks",
+        "route_commands_in_simulation"
+      ],
+      "restricted_actions": [
+        "sending_live_customer_outbound_without_real_token"
+      ],
+      "dependencies": [
+        "Meta System User Permanent Token",
+        "Verified WABA Phone Number ID",
+        "Meta Business Manager Verification"
+      ],
       "cost": "Meta conversation charges (~₹0.40 - ₹0.80 per business conversation in India)",
       "rate_limits": "Meta Messaging Tier limits (Tier 1: 1,000 unique recipients / 24h)",
       "tenant_scope": "COMPANY",
-      "fallbacks": ["email.resend", "founder_computer_browser_whatsapp_web"]
+      "fallbacks": [
+        "email.resend",
+        "founder_computer_browser_whatsapp_web"
+      ]
     },
     {
       "capability_name": "google.search_console_and_ga4",
@@ -302,17 +513,29 @@
       "transport": "rest_client",
       "environment": "CLOUD_API",
       "authentication": "Encrypted Google OAuth refresh token in Supabase vault_secrets",
-      "permissions": ["https://www.googleapis.com/auth/webmasters.readonly", "https://www.googleapis.com/auth/analytics.readonly"],
+      "permissions": [
+        "https://www.googleapis.com/auth/webmasters.readonly",
+        "https://www.googleapis.com/auth/analytics.readonly"
+      ],
       "status": "E_REQUIRES_MANUAL_CREDENTIAL",
       "verification_status": "UNVERIFIED_BYOK_KEY_MISMATCH",
       "verification_evidence": "search_google_connections has active row b67a0c5d for https://www.stratxcel.in/ and GA4 538010450, but vault secret 976985f1 decrypt failed due to BYOK key rotation. Requires OAuth re-connect or original key.",
-      "allowed_actions": ["query_search_performance", "query_ga4_reports"],
-      "restricted_actions": ["search_console_site_removal"],
-      "dependencies": ["Google OAuth reconnect in Admin UI or matching BYOK_VAULT_ENCRYPTION_KEY"],
+      "allowed_actions": [
+        "query_search_performance",
+        "query_ga4_reports"
+      ],
+      "restricted_actions": [
+        "search_console_site_removal"
+      ],
+      "dependencies": [
+        "Google OAuth reconnect in Admin UI or matching BYOK_VAULT_ENCRYPTION_KEY"
+      ],
       "cost": "FREE_GOOGLE_API",
       "rate_limits": "Google API quotas",
       "tenant_scope": "COMPANY",
-      "fallbacks": ["Founder Computer Chrome Search Console session"]
+      "fallbacks": [
+        "Founder Computer Chrome Search Console session"
+      ]
     },
     {
       "capability_name": "productivity.notion",
@@ -324,17 +547,30 @@
       "transport": "rest_client",
       "environment": "CLOUD_API",
       "authentication": "Notion Internal Integration Secret",
-      "permissions": ["read_content", "update_content"],
+      "permissions": [
+        "read_content",
+        "update_content"
+      ],
       "status": "E_REQUIRES_MANUAL_CREDENTIAL",
       "verification_status": "UNVERIFIED_BYOK_KEY_MISMATCH",
       "verification_evidence": "owner_sources has Notion row ecf2519b marked CONNECTED with sync cursor, but owner_source_connections token ref 83fb6776 fails decryption with current BYOK key. No NOTION_API_KEY in environment.",
-      "allowed_actions": ["search_pages", "read_databases", "append_blocks"],
-      "restricted_actions": ["workspace_deletion"],
-      "dependencies": ["NOTION_API_KEY in .env.local or reconnect via Admin Operating Brain"],
+      "allowed_actions": [
+        "search_pages",
+        "read_databases",
+        "append_blocks"
+      ],
+      "restricted_actions": [
+        "workspace_deletion"
+      ],
+      "dependencies": [
+        "NOTION_API_KEY in .env.local or reconnect via Admin Operating Brain"
+      ],
       "cost": "Included in Notion plan",
       "rate_limits": "3 requests/second",
       "tenant_scope": "PLATFORM",
-      "fallbacks": ["local_markdown_operating_logs"]
+      "fallbacks": [
+        "local_markdown_operating_logs"
+      ]
     },
     {
       "capability_name": "communication.email_resend",
@@ -346,17 +582,30 @@
       "transport": "rest_client",
       "environment": "CLOUD_API",
       "authentication": "RESEND_API_KEY",
-      "permissions": ["emails:send"],
+      "permissions": [
+        "emails:send"
+      ],
       "status": "C_AVAILABLE_BUT_NOT_CONNECTED",
       "verification_status": "UNVERIFIED_KEY_NOT_CONFIGURED",
       "verification_evidence": "Package @stratxcel/email-runtime fully implemented with outbox polling and Resend adapter, but RESEND_API_KEY is not set in any active .env file.",
-      "allowed_actions": ["send_email", "render_react_email_templates"],
-      "restricted_actions": ["sending_to_unverified_domains_without_domain_verification"],
-      "dependencies": ["RESEND_API_KEY in .env.local", "Domain DNS verification on stratxcel.ai or stratxcel.in"],
+      "allowed_actions": [
+        "send_email",
+        "render_react_email_templates"
+      ],
+      "restricted_actions": [
+        "sending_to_unverified_domains_without_domain_verification"
+      ],
+      "dependencies": [
+        "RESEND_API_KEY in .env.local",
+        "Domain DNS verification on stratxcel.ai or stratxcel.in"
+      ],
       "cost": "Resend Free (3,000 emails/mo) or Pro ($20/mo)",
       "rate_limits": "Resend rate limits (10/sec)",
       "tenant_scope": "BOTH",
-      "fallbacks": ["smtp_fallback", "founder_computer_gmail"]
+      "fallbacks": [
+        "smtp_fallback",
+        "founder_computer_gmail"
+      ]
     },
     {
       "capability_name": "lead_intelligence.apollo",
@@ -368,17 +617,30 @@
       "transport": "rest_client",
       "environment": "CLOUD_API",
       "authentication": "APOLLO_API_KEY",
-      "permissions": ["people:search", "people:enrich"],
+      "permissions": [
+        "people:search",
+        "people:enrich"
+      ],
       "status": "C_AVAILABLE_BUT_NOT_CONNECTED",
       "verification_status": "UNVERIFIED_KEY_NOT_CONFIGURED",
       "verification_evidence": "Registered in packages/connectors/src/registry.ts as connector 'apollo', but APOLLO_API_KEY is unset in .env.local and .env.production.local.",
-      "allowed_actions": ["search_contacts", "enrich_company_data"],
-      "restricted_actions": ["unmetered_bulk_export"],
-      "dependencies": ["APOLLO_API_KEY from Apollo.io dashboard"],
+      "allowed_actions": [
+        "search_contacts",
+        "enrich_company_data"
+      ],
+      "restricted_actions": [
+        "unmetered_bulk_export"
+      ],
+      "dependencies": [
+        "APOLLO_API_KEY from Apollo.io dashboard"
+      ],
       "cost": "Apollo subscription ($49-$99/mo) with export credits",
       "rate_limits": "Apollo API rate limits",
       "tenant_scope": "BOTH",
-      "fallbacks": ["crm.grounded_lead_discovery", "browser.automation.playwright_mcp"]
+      "fallbacks": [
+        "crm.grounded_lead_discovery",
+        "browser.automation.playwright_mcp"
+      ]
     },
     {
       "capability_name": "communication.telephony_voice",
@@ -390,17 +652,28 @@
       "transport": "rest_client",
       "environment": "UNCONFIGURED",
       "authentication": "Telephony Provider API Key & SIP credentials",
-      "permissions": ["calls:make", "calls:receive"],
+      "permissions": [
+        "calls:make",
+        "calls:receive"
+      ],
       "status": "G_NOT_AVAILABLE",
       "verification_status": "UNAVAILABLE_NO_PROVIDER_INTEGRATION",
       "verification_evidence": "Grep across codebase confirms telephony is marked as future V2 roadmap in docs/STRATXCEL_MISSING_REAL_CONNECTIONS.md; no runtime telephony package exists in packages/.",
       "allowed_actions": [],
-      "restricted_actions": ["all_telephony_actions"],
-      "dependencies": ["Twilio/Exotel account", "Telephony integration package build"],
+      "restricted_actions": [
+        "all_telephony_actions"
+      ],
+      "dependencies": [
+        "Twilio/Exotel account",
+        "Telephony integration package build"
+      ],
       "cost": "Per-minute SIP/telephony charges",
       "rate_limits": "Carrier concurrency limits",
       "tenant_scope": "BOTH",
-      "fallbacks": ["messaging.whatsapp_cloud", "communication.email_resend"]
+      "fallbacks": [
+        "messaging.whatsapp_cloud",
+        "communication.email_resend"
+      ]
     },
     {
       "capability_name": "advertising.google_and_meta_ads",
@@ -412,17 +685,34 @@
       "transport": "rest_client",
       "environment": "UNCONFIGURED",
       "authentication": "Google Ads Developer Token / Meta Marketing API Token",
-      "permissions": ["campaigns:create", "budgets:manage"],
+      "permissions": [
+        "campaigns:create",
+        "budgets:manage"
+      ],
       "status": "F_REQUIRES_EXTERNAL_ACCOUNT_AND_BILLING",
       "verification_status": "UNAVAILABLE_PROGRAMMATIC_WRITE_NOT_CONNECTED",
       "verification_evidence": "Ad planning engine (lib/commercial/ads-planning-engine.ts) generates briefs and keyword DAGs in memory, but live spend is unconfigured and blocked without developer token and billing approval.",
-      "allowed_actions": ["draft_ad_copy", "plan_keyword_budgets", "generate_ad_briefs"],
-      "restricted_actions": ["charging_live_ad_spend", "modifying_google_ads_accounts"],
-      "dependencies": ["Google Ads Manager (MCC) Developer Token", "Meta Marketing API App Review", "Verified Payment Card on Ads Accounts"],
+      "allowed_actions": [
+        "draft_ad_copy",
+        "plan_keyword_budgets",
+        "generate_ad_briefs"
+      ],
+      "restricted_actions": [
+        "charging_live_ad_spend",
+        "modifying_google_ads_accounts"
+      ],
+      "dependencies": [
+        "Google Ads Manager (MCC) Developer Token",
+        "Meta Marketing API App Review",
+        "Verified Payment Card on Ads Accounts"
+      ],
       "cost": "Live ad spend + API fees",
       "rate_limits": "Platform developer tier limits",
       "tenant_scope": "COMPANY",
-      "fallbacks": ["crm.grounded_lead_discovery", "seo.organic_search"]
+      "fallbacks": [
+        "crm.grounded_lead_discovery",
+        "seo.organic_search"
+      ]
     },
     {
       "capability_name": "payments.razorpay",
@@ -434,17 +724,37 @@
       "transport": "rest_client_and_webhooks",
       "environment": "PRODUCTION_VERCEL",
       "authentication": "RAZORPAY_KEY_ID & RAZORPAY_KEY_SECRET & RAZORPAY_WEBHOOK_SECRET",
-      "permissions": ["payments:create_link", "payments:reconcile", "payments:webhook_receive", "wallet:credit"],
+      "permissions": [
+        "payments:create_link",
+        "payments:reconcile",
+        "payments:webhook_receive",
+        "wallet:credit"
+      ],
       "status": "A_CONNECTED_AND_VERIFIED",
       "verification_status": "VERIFIED_REAL_EXECUTION",
       "verification_evidence": "Production runtime probe -> HTTP 200. Generated live payment link plink_TaMewmf2xJuOYI for STRATXCEL SOLUTIONS (OPC) PRIVATE LIMITED for ₹10.00 (https://rzp.io/rzp/nvidrLv). Verified live checkout rendering with UPI QR code. Verified direct API reconciliation (status: created). Tested claim_razorpay_webhook_event atomic RPC idempotency (PASS).",
-      "allowed_actions": ["create_payment_link", "reconcile_payment_link", "process_webhook_event", "issue_gst_invoice"],
-      "restricted_actions": ["fabricating_payment_success", "crediting_unpaid_revenue", "bypassing_tenant_isolation"],
-      "dependencies": ["packages/payments-and-wallet", "app/api/platform/payments/links", "app/api/webhook/razorpay"],
+      "allowed_actions": [
+        "create_payment_link",
+        "reconcile_payment_link",
+        "process_webhook_event",
+        "issue_gst_invoice"
+      ],
+      "restricted_actions": [
+        "fabricating_payment_success",
+        "crediting_unpaid_revenue",
+        "bypassing_tenant_isolation"
+      ],
+      "dependencies": [
+        "packages/payments-and-wallet",
+        "app/api/platform/payments/links",
+        "app/api/webhook/razorpay"
+      ],
       "cost": "Razorpay MDR fee per transaction",
       "rate_limits": "Razorpay API tier limits",
       "tenant_scope": "TENANT_ISOLATED",
-      "fallbacks": ["manual_reconciliation_queue"]
+      "fallbacks": [
+        "manual_reconciliation_queue"
+      ]
     },
     {
       "capability_name": "hosting.vercel_deployments",
@@ -456,17 +766,40 @@
       "transport": "vercel_cli_and_rest_api",
       "environment": "WINDOWS_AND_CLOUD",
       "authentication": "Vercel CLI OAuth token (~/.vercel / %APPDATA%/xdg.data/com.vercel.cli/auth.json) with automatic refresh",
-      "permissions": ["projects:read", "domains:read_write", "deployments:create", "deployments:promote", "deployments:read"],
+      "permissions": [
+        "projects:read",
+        "domains:read_write",
+        "deployments:create",
+        "deployments:promote",
+        "deployments:read"
+      ],
       "status": "A_CONNECTED_AND_VERIFIED",
       "verification_status": "VERIFIED_REAL_EXECUTION",
       "verification_evidence": "Vercel CLI authenticated as jack160699. Project prj_81j5A5rArsPVVNspwSPGGfuhg9NZ (stratxcel) verified via REST API (HTTP 200). Live production deployment dpl_FNP1iC4hNC1EQvuXpgAy2hW3vZBZ created, reached READY in 3m. Production URLs https://www.stratxcel.in and https://stratxcel.vercel.app return HTTP 200 with matching commit 2d033ce.",
-      "allowed_actions": ["deploy_project", "inspect_deployment", "list_deployments", "promote_deployment", "rollback_deployment", "attach_domain"],
-      "restricted_actions": ["deploying_unreviewed_code", "deleting_production_projects"],
-      "dependencies": ["packages/websites-and-domains", "packages/search-discovery", "lib/agent-core", "vercel CLI"],
+      "allowed_actions": [
+        "deploy_project",
+        "inspect_deployment",
+        "list_deployments",
+        "promote_deployment",
+        "rollback_deployment",
+        "attach_domain"
+      ],
+      "restricted_actions": [
+        "deploying_unreviewed_code",
+        "deleting_production_projects"
+      ],
+      "dependencies": [
+        "packages/websites-and-domains",
+        "packages/search-discovery",
+        "lib/agent-core",
+        "vercel CLI"
+      ],
       "cost": "Included in Vercel plan",
       "rate_limits": "Vercel REST API tier limits",
       "tenant_scope": "PLATFORM",
-      "fallbacks": ["local_nextjs_server"]
+      "fallbacks": [
+        "local_nextjs_server"
+      ]
     },
     {
       "capability_name": "aws.background_workers",
@@ -478,17 +811,127 @@
       "transport": "aws_ssm_and_postgres_queue",
       "environment": "AWS_EC2_UBUNTU",
       "authentication": "AWS STS / SSM session arn:aws:iam::257212469831:root via CLI login cache",
-      "permissions": ["ssm:SendCommand", "ssm:GetCommandInvocation", "ec2:DescribeInstances", "queue_jobs:claim", "worker_heartbeats:write"],
+      "permissions": [
+        "ssm:SendCommand",
+        "ssm:GetCommandInvocation",
+        "ec2:DescribeInstances",
+        "queue_jobs:claim",
+        "worker_heartbeats:write"
+      ],
       "status": "A_CONNECTED_AND_VERIFIED",
       "verification_status": "VERIFIED_REAL_EXECUTION",
       "verification_evidence": "AWS STS authenticated (account 257212469831, region ap-south-1). EC2 instance i-0067f6c0dfd60cc46 running; SSM Agent Online. Live systemd workers active: stratxcel-mission-worker (:8083), stratxcel-whatsapp-processor (:8084), stratxcel-whatsapp-webhook (:8081), stratxcel-hermes-gateway (:8082). Live heartbeats emitting to Supabase table worker_heartbeats every 30s. Controlled live queue test enqueued mission eeddf449; worker claimed it in 2s (QUEUED -> RUNNING), executed with automatic lease heartbeat refresh, and persisted mission events.",
-      "allowed_actions": ["ssm_command_dispatch", "worker_health_inspection", "queue_job_claim", "lease_heartbeat_renewal", "mission_state_transition", "inbound_webhook_processing"],
-      "restricted_actions": ["terminating_ec2_instances", "bypassing_tenant_isolation", "modifying_firewall_rules"],
-      "dependencies": ["AWS CLI v2", "AWS SSM Agent", "apps/mission-worker", "apps/whatsapp-worker", "apps/hermes-gateway", "@stratxcel/queue", "Supabase PostgreSQL queue"],
+      "allowed_actions": [
+        "ssm_command_dispatch",
+        "worker_health_inspection",
+        "queue_job_claim",
+        "lease_heartbeat_renewal",
+        "mission_state_transition",
+        "inbound_webhook_processing"
+      ],
+      "restricted_actions": [
+        "terminating_ec2_instances",
+        "bypassing_tenant_isolation",
+        "modifying_firewall_rules"
+      ],
+      "dependencies": [
+        "AWS CLI v2",
+        "AWS SSM Agent",
+        "apps/mission-worker",
+        "apps/whatsapp-worker",
+        "apps/hermes-gateway",
+        "@stratxcel/queue",
+        "Supabase PostgreSQL queue"
+      ],
       "cost": "AWS EC2 t3.small compute cost",
       "rate_limits": "SSM API limits; queue poll interval ~3-5s",
       "tenant_scope": "TENANT_ISOLATED",
-      "fallbacks": ["vercel_cron_workers", "local_worker_process"]
+      "fallbacks": [
+        "vercel_cron_workers",
+        "local_worker_process"
+      ]
+    },
+    {
+      "capability_name": "intelligence.google_search_console",
+      "category": "SEO_INTELLIGENCE",
+      "description": "Real Google Search Console search performance intelligence, property ownership verification, query impression/click analytics, and indexing health",
+      "provider": "Google Search Console API",
+      "access_method": "api",
+      "mcp_server": null,
+      "transport": "rest_client",
+      "environment": "PRODUCTION_VERCEL",
+      "authentication": "Google OAuth 2.0 (webmasters.readonly) via BYOK encrypted vault ref",
+      "permissions": [
+        "search:read",
+        "search:analyze",
+        "search:properties_list"
+      ],
+      "status": "A_CONNECTED_AND_VERIFIED",
+      "verification_status": "VERIFIED_REAL_EXECUTION",
+      "verification_evidence": "Live production probe against GET /api/platform/search/google/resources returned HTTP 200 with property https://www.stratxcel.in/ (permissionLevel: siteOwner). Executed live search analysis run 52e3858e -> state COMPLETED, retrieved 8 real query rows (e.g. 'social autopilot', 72 impressions, 4 clicks, CTR 5.56%, pos 5.57). Synced timestamp updated to 2026-09-10T15:09:14Z.",
+      "allowed_actions": [
+        "list_sites",
+        "query_search_analytics",
+        "run_search_analysis",
+        "generate_seo_recommendations"
+      ],
+      "restricted_actions": [
+        "fabricating_serp_metrics",
+        "modifying_site_ownership",
+        "submitting_unreviewed_sitemaps"
+      ],
+      "dependencies": [
+        "packages/search-discovery",
+        "packages/byok",
+        "app/api/platform/search/run",
+        "app/api/platform/search/google/resources"
+      ],
+      "cost": "Google Search Console API free tier",
+      "rate_limits": "Google Webmasters API quota limits",
+      "tenant_scope": "TENANT_ISOLATED",
+      "fallbacks": [
+        "public_crawler_diagnostics"
+      ]
+    },
+    {
+      "capability_name": "intelligence.google_analytics_4",
+      "category": "ANALYTICS_INTELLIGENCE",
+      "description": "Live Google Analytics 4 property reporting, organic traffic attribution, landing page engagement, and conversion tracking",
+      "provider": "Google Analytics Data & Admin API",
+      "access_method": "api",
+      "mcp_server": null,
+      "transport": "rest_client",
+      "environment": "PRODUCTION_VERCEL",
+      "authentication": "Google OAuth 2.0 (analytics.readonly) via BYOK encrypted vault ref",
+      "permissions": [
+        "analytics:read",
+        "analytics:properties_list"
+      ],
+      "status": "A_CONNECTED_AND_VERIFIED",
+      "verification_status": "VERIFIED_REAL_EXECUTION",
+      "verification_evidence": "Live production probe against GET /api/platform/search/google/resources returned HTTP 200 with GA4 Property 538010450 (www.stratxcel.in). Executed live search analysis run 52e3858e -> state COMPLETED, retrieved 5 real landing page performance records (e.g. '/' with 15 organic visits, 9 engaged sessions; '/social-autopilot' with 6 visits, 1 conversion). Synced timestamp updated to 2026-09-10T15:09:18Z.",
+      "allowed_actions": [
+        "list_properties",
+        "read_outcomes",
+        "report_organic_traffic",
+        "attribute_conversions"
+      ],
+      "restricted_actions": [
+        "fabricating_analytics_traffic",
+        "cross_tenant_data_mixing"
+      ],
+      "dependencies": [
+        "packages/search-discovery",
+        "packages/byok",
+        "lib/reporting/capability-host",
+        "app/api/platform/search/google/resources"
+      ],
+      "cost": "Google Analytics Data API free quota",
+      "rate_limits": "GA4 Core Reporting API quota limits",
+      "tenant_scope": "TENANT_ISOLATED",
+      "fallbacks": [
+        "internal_site_telemetry"
+      ]
     }
   ]
 }

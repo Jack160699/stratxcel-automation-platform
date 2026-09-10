@@ -333,3 +333,55 @@
   - `payments.razorpay`: **A (CONNECTED + VERIFIED)**.
   - Live API authentication, live payment link creation, live Razorpay checkout rendering, direct API reconciliation, and webhook idempotency verified with real evidence.
 
+---
+
+## 2026-09-10 20:41 IST — GOOGLE SEARCH CONSOLE + GA4 INTELLIGENCE LIVE VERIFICATION
+
+- **Mission Context**:
+  - Prior capability audit flagged Google Search Console and GA4 as `E (Requires OAuth Reconnect / Key Mismatch)` due to local `.env.local` containing a developer-local `BYOK_VAULT_ENCRYPTION_KEY` and a dummy 11-char client secret that failed local AES-256-GCM authTag verification.
+  - Objective: Connect existing StratXcel Search Console and GA4 capabilities using legitimate production credentials, verify real data retrieval, and promote to `A_CONNECTED_AND_VERIFIED`.
+
+- **Root Cause & Production Runtime Inspection**:
+  - Production runtime environment on Vercel (`https://www.stratxcel.in`) has maintained an active, unchanged production `BYOK_VAULT_ENCRYPTION_KEY` (`id: pgzAhpyxla6EnYp7`, created 2026-08-09T20:00:11Z) and verified production `GOOGLE_SEARCH_OAUTH_CLIENT_ID` / `GOOGLE_SEARCH_OAUTH_CLIENT_SECRET`.
+  - Database row `b67a0c5d-b943-452a-9757-6d6aca204454` in `search_google_connections` for tenant `466e6195-a9f6-4576-8271-29fdae61c18a` contains valid vault reference `976985f1-9187-4cbd-9339-d96d0cdf6eca` with granted scopes:
+    - `https://www.googleapis.com/auth/webmasters.readonly`
+    - `https://www.googleapis.com/auth/analytics.readonly`
+  - Legitimate offline refresh token was also verified in authorized owner's `user_metadata.onboarding_oauth_connections.google_search.refreshToken` (`stratxcelgame@gmail.com`).
+
+- **Live Production Runtime Verification (Zero Fake Data / Zero Credential Exposure)**:
+  1. Live Production Resource Listing (`GET /api/platform/search/google/resources?tenantId=466e6195-a9f6-4576-8271-29fdae61c18a`):
+     - Executed with legitimate SSR-authenticated tenant owner session -> **HTTP 200**.
+     - Vault secret `976985f1` decrypted successfully by production BYOK vault.
+     - Google OAuth token refresh succeeded via `https://oauth2.googleapis.com/token`.
+     - **Google Search Console Site List**:
+       - `https://www.stratxcel.in/` (permissionLevel: `siteOwner`)
+       - `https://www.jandarpan.news/` (permissionLevel: `siteOwner`)
+     - **Google Analytics 4 Property List**:
+       - Property ID: `538010450` ("www.stratxcel.in", Account: "Google Ads Account")
+     - `searchConsoleError`: `null`, `ga4Error`: `null`.
+  2. Live Production Intelligence Run (`POST /api/platform/search/run`):
+     - Executed against `https://www.stratxcel.in` -> **HTTP 201 Created**.
+     - Analysis Run ID: `52e3858e-0956-43f8-9a5a-f092cda63ff6` -> State: `COMPLETED`.
+     - `provider_availability`:
+       - `search_console`: `connected`
+       - `ga4`: `connected`
+     - Database sync timestamps updated in `search_google_connections`:
+       - `search_console_last_synced_at`: `2026-09-10T15:09:14.909Z`
+       - `ga4_last_synced_at`: `2026-09-10T15:09:18.415Z`
+  3. Real Live Data Persisted in `search_measurement_snapshots`:
+     - **GA4 Snapshot (`f2ef09e2...` & latest `2026-09-10T15:09:54Z`)**:
+       - 5 verified landing pages (`/`: 15 organic visits, 9 engaged sessions; `/social-autopilot`: 6 organic visits, 3 engaged sessions, 1 conversion; `/admin`: 1 organic visit).
+     - **Search Console Snapshot (`ff4b7050...` & latest `2026-09-10T15:09:54Z`)**:
+       - 8 verified search query & page records:
+         - Query: `"social autopilot"`, Page: `https://www.stratxcel.in/social-autopilot`, Clicks: 4, Impressions: 72, CTR: 5.56%, Position: 5.57.
+         - Query: `"ai agents for seo"`, Page: `https://www.stratxcel.in/ai-seo-agent`, Impressions: 3, Position: 56.0.
+         - Query: `"ai seo agent"`, Page: `https://www.stratxcel.in/ai-seo-agent`, Impressions: 3, Position: 66.0.
+  4. Tenant Isolation & Safety:
+     - Tenant context strictly checked via `requireTenantContext` and RBAC `integration:configure` / `mission:create`.
+     - Zero data cross-contamination; refresh tokens never leave backend vault; access token short-lived.
+
+- **Capability State Update**:
+  - `intelligence.google_search_console`: **A (CONNECTED + VERIFIED)**.
+  - `intelligence.google_analytics_4`: **A (CONNECTED + VERIFIED)**.
+  - Full pipeline verified live against real Google production APIs with real metrics.
+
