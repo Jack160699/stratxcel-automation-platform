@@ -71,8 +71,9 @@ const LEASE_SECONDS = Number(process.env.MISSION_WORKER_LEASE_SECONDS ?? 300);
 const HEARTBEAT_DURING_EXECUTE_MS = Math.max(5000, Math.floor((LEASE_SECONDS * 1000) / 3));
 const WORKER_TYPE = "mission-worker" as const;
 const EMAIL_WORKER_TYPE = "email-processor" as const;
-const REVENUE_ENGINE_WORKER_TYPE = "revenue-autonomous-engine" as const;
+const REVENUE_ENGINE_WORKER_TYPE = "mission-worker" as const;
 const INSTANCE_ID = `${os.hostname()}-${process.pid}`;
+const REVENUE_INSTANCE_ID = `${os.hostname()}-rev-${process.pid}`;
 const LEASE_OWNER = `${WORKER_TYPE}-${INSTANCE_ID}`;
 const EMAIL_LEASE_OWNER = `${EMAIL_WORKER_TYPE}-${INSTANCE_ID}`;
 const MISSION_JOB_TYPE = "mission.execute";
@@ -449,7 +450,7 @@ if (process.env.NODE_ENV !== "test") {
   }).catch((err) => console.error("[mission-worker] email-processor initial heartbeat failed:", err));
   recordWorkerHeartbeat(supabase, {
     workerType: REVENUE_ENGINE_WORKER_TYPE,
-    instanceId: INSTANCE_ID,
+    instanceId: REVENUE_INSTANCE_ID,
     status: "idle",
     version: VERSION,
   }).catch((err) => console.error("[mission-worker] revenue-engine initial heartbeat failed:", err));
@@ -523,7 +524,7 @@ if (process.env.NODE_ENV !== "test") {
       .then((res) => {
         recordWorkerHeartbeat(supabase, {
           workerType: REVENUE_ENGINE_WORKER_TYPE,
-          instanceId: INSTANCE_ID,
+          instanceId: REVENUE_INSTANCE_ID,
           status: "idle",
           version: VERSION,
           queueBacklogHint: res.qualifiedCount,
@@ -533,7 +534,7 @@ if (process.env.NODE_ENV !== "test") {
         console.error("[mission-worker] continuous revenue cycle failed:", err);
         recordWorkerHeartbeat(supabase, {
           workerType: REVENUE_ENGINE_WORKER_TYPE,
-          instanceId: INSTANCE_ID,
+          instanceId: REVENUE_INSTANCE_ID,
           status: "degraded",
           version: VERSION,
           lastError: { message: err instanceof Error ? err.message : String(err) },
