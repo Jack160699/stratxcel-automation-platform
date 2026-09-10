@@ -8,6 +8,7 @@
  */
 
 import type { ServiceClient } from "../db.ts";
+import { UniversalLeadEngine } from "../../../workforce-core/src/acquisition/universal-lead-engine.ts";
 import { groundedLeadDiscoveryService } from "../../../workforce-core/src/discovery/real-lead-discovery.ts";
 
 
@@ -92,33 +93,27 @@ export async function executeLeadDiscoveryMission(
     }
   }
 
-  // 2. Discover genuine verified prospects using GroundedLeadDiscoveryService
-  const qLower = (input.query || "").toLowerCase();
-  const bLower = businessName.toLowerCase();
-  const isAdmissions = qLower.includes("admission") || qLower.includes("university") || qLower.includes("russia") || qLower.includes("student") || bLower.includes("admission");
-  const isLinkup = qLower.includes("linkup") || qLower.includes("saas") || qLower.includes("crm") || bLower.includes("linkup");
-  const offerCategory = isAdmissions ? "ADMISSIONS" : isLinkup ? "LINKUP_SAAS" : "SOLAR";
-
+  // 2. Discover genuine verified prospects using UniversalLeadEngine
   const requestedCount = input.targetLeads || input.leadCount || 12;
-
-  const discoveryResult = await groundedLeadDiscoveryService.discoverGroundedLeads({
-    tenantId,
-    missionId,
-    offerCategory,
-    targetQuantity: requestedCount,
+  const universalEngine = new UniversalLeadEngine({
     supabaseClient: supabase as any,
-    cycleNumber: 1,
   });
 
-  const allLeads: DiscoveredLead[] = discoveryResult.leads.map((lead) => ({
-    contactName: lead.contactName || "",
-    contactEmail: lead.contactEmail || "",
-    contactPhone: lead.contactPhone || "",
-    company: lead.companyName,
-    designation: lead.decisionMakerRole,
-    estimatedDealValueInr: lead.estimatedDealValueInr,
-    intentScore: lead.provenance.qualificationScore,
-    painPoint: lead.painPointOrSignal,
+  const discoveryExecution = await universalEngine.executeDiscovery({
+    tenantId,
+    objectiveText: input.query || `Identify qualified commercial leads for ${businessName}`,
+    targetQuantity: requestedCount,
+  });
+
+  const allLeads: DiscoveredLead[] = discoveryExecution.leads.map((lead) => ({
+    contactName: lead.enrichment.executiveContacts?.[0]?.name || lead.identity.companyName,
+    contactEmail: lead.identity.primaryEmail || "",
+    contactPhone: lead.identity.primaryPhone || "",
+    company: lead.identity.companyName,
+    designation: lead.enrichment.executiveContacts?.[0]?.designation || "Authorized Representative",
+    estimatedDealValueInr: lead.qualification.estimatedDealValueInr || 250000,
+    intentScore: lead.qualification.qualificationScore,
+    painPoint: lead.evidenceList[0]?.claim || "Active commercial enterprise",
     source: "import",
   }));
   const isScaleDiscovery = false;

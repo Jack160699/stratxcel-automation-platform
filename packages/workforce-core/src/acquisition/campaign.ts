@@ -143,7 +143,7 @@ export function createAdCreativeBrief(input: {
     variantsNeeded: input.variantsNeeded ?? 3,
     platformConstraints: [
       `platform:${input.campaignPlan.platform}`,
-      ...input.campaignPlan.placements.map((p) => `placement:${p}`),
+      ...input.campaignPlan.placements.map((p: string) => `placement:${p}`),
     ],
     claimConstraints: input.claimConstraints ?? [
       "No unverified performance claims",

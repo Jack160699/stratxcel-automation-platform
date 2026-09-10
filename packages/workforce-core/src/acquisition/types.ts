@@ -248,3 +248,222 @@ export interface PaidAcquisitionSignals {
   killSwitchEngaged?: boolean;
   evidenceIds?: readonly string[];
 }
+
+// ============================================================================
+// UNIVERSAL LEAD ACQUISITION & ENRICHMENT ENGINE CONTRACTS
+// ============================================================================
+
+export type ProviderVerificationState =
+  | "VERIFIED"
+  | "PARTIAL"
+  | "BLOCKED"
+  | "UNAVAILABLE"
+  | "BILLING_REQUIRED"
+  | "POLICY_RESTRICTED";
+
+export interface ProviderAvailabilityStatus {
+  providerKey: string;
+  providerName: string;
+  category: "search" | "maps" | "directory" | "social" | "enrichment" | "government" | "website" | "catalog";
+  state: ProviderVerificationState;
+  accessMethod: "api" | "mcp" | "web_scraping" | "browser" | "native_catalog";
+  authenticated: boolean;
+  rateLimitInfo?: string;
+  commercialRequirement?: string;
+  policyConstraints?: string;
+  verificationEvidence?: string;
+  fallbackProviderKey?: string;
+}
+
+export type EvidenceConfidenceLevel = "VERIFIED" | "HIGH" | "MEDIUM" | "LOW" | "INFERRED";
+
+export interface LeadSourceProvenance {
+  sourceKey: string;
+  sourceName: string;
+  sourceUrl?: string;
+  sourceRecordId?: string;
+  discoveredAt: string;
+  verificationMethod: "direct_api" | "html_scrape" | "dns_probe" | "public_registry" | "grounded_catalog" | "manual";
+  confidence: EvidenceConfidenceLevel;
+  confidenceScore: number; // 0.0 - 1.0
+  deduplicationHash: string;
+  extractedFields: string[];
+  rawSnippet?: string;
+}
+
+export interface LeadEvidence {
+  id: string;
+  claim: string;
+  field: string;
+  value: unknown;
+  sourceKey: string;
+  sourceUrl?: string;
+  confidence: EvidenceConfidenceLevel;
+  recordedAt: string;
+}
+
+export interface LeadIdentity {
+  companyName: string;
+  normalizedCompanyName: string;
+  websiteUrl: string | null;
+  canonicalDomain: string | null;
+  primaryPhone: string | null;
+  normalizedPhone: string | null;
+  allPhones: string[];
+  primaryEmail: string | null;
+  normalizedEmail: string | null;
+  allEmails: string[];
+  facilityAddress: string | null;
+  city: string | null;
+  stateOrRegion: string | null;
+  country: string;
+  socialHandles?: {
+    linkedin?: string;
+    instagram?: string;
+    facebook?: string;
+    twitter?: string;
+  };
+  gstin?: string;
+  udyamNumber?: string;
+  deduplicationHash: string;
+}
+
+export interface LeadEnrichment {
+  employeeCountRange?: string;
+  annualRevenueEstimatedInr?: number;
+  techStack?: string[];
+  subIndustry?: string;
+  executiveContacts?: Array<{
+    name: string;
+    designation: string;
+    email?: string;
+    phone?: string;
+    linkedinUrl?: string;
+    isPrimaryDecisionMaker: boolean;
+  }>;
+  operationalSignals?: string[];
+  ratingsScore?: number;
+  reviewCount?: number;
+  openingStatus?: string;
+  lastEnrichedAt: string;
+  enrichmentSources: string[];
+}
+
+export interface LeadQualification {
+  qualificationScore: number; // 0 - 100
+  icpFitTier: "TIER_1_ENTERPRISE" | "TIER_2_GROWTH" | "TIER_3_SMB" | "UNQUALIFIED";
+  status: "DISCOVERED" | "ENRICHED" | "VERIFIED" | "QUALIFIED";
+  signals: {
+    geographyMatch: boolean;
+    industryFit: boolean;
+    scaleMatch: boolean;
+    needOrProblemDetected: boolean;
+    decisionMakerIdentified: boolean;
+    contactabilityReady: boolean;
+  };
+  scoringBreakdown: Array<{
+    factor: string;
+    pointsAwarded: number;
+    maxPoints: number;
+    explanation: string;
+  }>;
+  summaryRationale: string;
+  recommendedOfferCategory?: string;
+  estimatedDealValueInr?: number;
+}
+
+export interface OutreachEligibility {
+  isEligible: boolean;
+  preferredChannel: "whatsapp" | "email" | "phone" | "manual_review";
+  consentState: "EXPLICIT_CONSENT" | "LEGITIMATE_INTEREST_B2B" | "OPT_OUT" | "CONSENT_REQUIRED";
+  whatsappOptInReady: boolean;
+  reason: string;
+  suppressionReason?: string;
+}
+
+export interface CanonicalLead {
+  id: string;
+  tenantId: string;
+  identity: LeadIdentity;
+  provenanceHistory: LeadSourceProvenance[];
+  evidenceList: LeadEvidence[];
+  enrichment: LeadEnrichment;
+  qualification: LeadQualification;
+  outreachEligibility: OutreachEligibility;
+  status: "DISCOVERED" | "ENRICHED" | "VERIFIED" | "QUALIFIED" | "CONTACTED" | "RESPONDED" | "INTERESTED" | "PROPOSAL" | "WON" | "LOST";
+  source: "whatsapp" | "website_form" | "manual" | "import" | "whatsapp_outreach" | "hermes_research";
+  createdAt: string;
+  updatedAt: string;
+  lastVerifiedAt: string;
+}
+
+export interface RawDiscoveredLead {
+  companyName: string;
+  website?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  stateOrRegion?: string;
+  country?: string;
+  industry?: string;
+  category?: string;
+  painPointOrSignal?: string;
+  decisionMakerRole?: string;
+  contactPersonName?: string;
+  rating?: number;
+  reviewCount?: number;
+  sourceKey: string;
+  sourceName: string;
+  sourceUrl?: string;
+  confidence?: EvidenceConfidenceLevel;
+  rawPayload?: Record<string, unknown>;
+}
+
+export interface LeadDiscoveryQuery {
+  tenantId: string;
+  objectiveText: string;
+  targetIndustry?: string;
+  targetGeography?: string;
+  targetOfferCategory?: string;
+  targetQuantity?: number;
+  minQualificationScore?: number;
+  allowedSources?: string[];
+  maxSearchDepth?: number;
+}
+
+export interface LeadSourceAdapter {
+  readonly providerKey: string;
+  readonly providerName: string;
+  readonly sourceCategory: "search" | "maps" | "directory" | "social" | "enrichment" | "government" | "website" | "catalog";
+  readonly accessMethod: "api" | "mcp" | "web_scraping" | "browser" | "native_catalog";
+  readonly authenticationType: "api_key" | "oauth2" | "session" | "none";
+
+  checkAvailability(): Promise<ProviderAvailabilityStatus>;
+  discoverLeads(query: LeadDiscoveryQuery): Promise<RawDiscoveredLead[]>;
+  enrichLead?(identity: LeadIdentity): Promise<Partial<LeadEnrichment>>;
+}
+
+export interface UniversalDiscoveryExecutionResult {
+  missionId: string;
+  tenantId: string;
+  objective: string;
+  targetQuantity: number;
+  sourcesQueried: string[];
+  sourcesSucceeded: string[];
+  sourcesFailed: string[];
+  rawDiscoveredCount: number;
+  deduplicatedCount: number;
+  verifiedCount: number;
+  qualifiedCount: number;
+  persistedCount: number;
+  leads: CanonicalLead[];
+  providerStatuses: Record<string, ProviderAvailabilityStatus>;
+  executionSummary: string;
+  overlapAnalysis: {
+    singleSourceLeads: number;
+    multiSourceLeads: number;
+    topOverlappingSources: string[];
+  };
+  [key: string]: unknown;
+}

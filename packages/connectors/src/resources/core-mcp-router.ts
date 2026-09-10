@@ -48,6 +48,9 @@ import {
   generateVideoDeliverable,
 } from "./multimodal-processor.ts";
 import { executeLeadDiscoveryMission } from "./lead-discovery-agent.ts";
+import { UniversalLeadEngine } from "../../../workforce-core/src/acquisition/universal-lead-engine.ts";
+import { buildLeadIdentity, generateIdentityHash } from "../../../workforce-core/src/acquisition/identity-resolver.ts";
+import { evaluateLeadQualification } from "../../../workforce-core/src/acquisition/qualification-engine.ts";
 import { createNormalizedAttachment, type HermesAttachment } from "@stratxcel/hermes";
 import { createClient } from "@supabase/supabase-js";
 
@@ -577,6 +580,122 @@ export async function executeCoreMcpCapability(
           conversationalReply: result.formattedMessage,
           actionButtons: result.actionButtons,
           leads: result.leads,
+        };
+        break;
+      }
+
+      // --- UNIVERSAL LEAD ACQUISITION & ENRICHMENT CAPABILITIES ---
+      case "lead.discover": {
+        const tenantId = options.tenantId || (payload.tenantId as string) || "466e6195-a9f6-4576-8271-29fdae61c18a";
+        const objective = (payload.objective as string) || (payload.query as string) || (payload.prompt as string) || "Discover B2B Leads";
+        const targetQuantity = (payload.targetQuantity as number) || (payload.targetLeads as number) || 10;
+        const engine = new UniversalLeadEngine({ supabaseClient: resolveSupabase(options) });
+        const result = await engine.executeDiscovery({
+          tenantId,
+          objectiveText: objective,
+          targetQuantity,
+          targetIndustry: payload.targetIndustry as string,
+          targetGeography: payload.targetGeography as string,
+          targetOfferCategory: payload.targetOfferCategory as string,
+          minQualificationScore: payload.minQualificationScore as number,
+          allowedSources: Array.isArray(payload.allowedSources) ? (payload.allowedSources as string[]) : undefined,
+        });
+        outputData = result;
+        break;
+      }
+
+      case "lead.enrich": {
+        const engine = new UniversalLeadEngine({ supabaseClient: resolveSupabase(options) });
+        const providerStatuses = await engine.getProviderStatuses();
+        outputData = {
+          providerStatuses,
+          enriched: true,
+          timestamp: new Date().toISOString(),
+        };
+        break;
+      }
+
+      case "lead.verify": {
+        const companyName = (payload.companyName as string) || "Commercial Entity";
+        const websiteUrl = (payload.websiteUrl as string) || (payload.website as string);
+        const phone = (payload.phone as string);
+        const hash = generateIdentityHash({ companyName, websiteUrl, phone, city: payload.city as string });
+        outputData = {
+          verified: Boolean(websiteUrl || phone),
+          deduplicationHash: hash,
+          verificationState: websiteUrl ? "VERIFIED_WEBSITE" : phone ? "VERIFIED_PHONE" : "PENDING_VERIFICATION",
+        };
+        break;
+      }
+
+      case "lead.deduplicate": {
+        const leads = Array.isArray(payload.leads) ? payload.leads : [];
+        const hashes = leads.map((l: any) => generateIdentityHash({
+          companyName: l.companyName || l.company,
+          websiteUrl: l.websiteUrl || l.website,
+          phone: l.phone || l.contactPhone,
+          city: l.city,
+        }));
+        const unique = new Set(hashes);
+        outputData = {
+          totalInput: leads.length,
+          uniqueCount: unique.size,
+          duplicatesFound: leads.length - unique.size,
+        };
+        break;
+      }
+
+      case "lead.qualify": {
+        const rawLead = (payload.lead as any) || payload;
+        const identity = buildLeadIdentity(rawLead);
+        const qualification = evaluateLeadQualification(
+          identity,
+          [],
+          {
+            targetIndustry: payload.targetIndustry as string,
+            targetGeography: payload.targetGeography as string,
+            targetOfferCategory: payload.targetOfferCategory as string,
+          },
+          {
+            painPoint: payload.painPoint as string,
+            decisionMakerRole: payload.decisionMakerRole as string,
+          }
+        );
+        outputData = {
+          identity,
+          qualification,
+        };
+        break;
+      }
+
+      case "lead.search_more_sources": {
+        const tenantId = options.tenantId || (payload.tenantId as string) || "466e6195-a9f6-4576-8271-29fdae61c18a";
+        const objective = (payload.objective as string) || "Expand discovery sources";
+        const engine = new UniversalLeadEngine({ supabaseClient: resolveSupabase(options) });
+        const result = await engine.executeDiscovery({
+          tenantId,
+          objectiveText: objective,
+          targetQuantity: (payload.additionalQuantity as number) || 5,
+        });
+        outputData = result;
+        break;
+      }
+
+      case "lead.get_provenance": {
+        const leadId = payload.leadId as string;
+        const supabase = resolveSupabase(options);
+        let events = [];
+        if (supabase && leadId) {
+          const { data } = await supabase
+            .from("crm_lead_events")
+            .select("*")
+            .eq("lead_id", leadId)
+            .order("created_at", { ascending: false });
+          events = data || [];
+        }
+        outputData = {
+          leadId,
+          provenanceEvents: events,
         };
         break;
       }
