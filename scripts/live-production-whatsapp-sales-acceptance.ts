@@ -72,6 +72,12 @@ async function main() {
 
   console.log(`[BINDING] ID: ${binding?.id}, Inbound: ${binding?.inbound_enabled}, Outbound: ${binding?.outbound_enabled}`);
 
+  // Unpause conversation to test active Turn 6 response prior to opt-out
+  await supabase
+    .from("whatsapp_conversations")
+    .update({ automation_mode: "automated" })
+    .eq("lead_id", "525dfba7-6995-4e78-92ae-a77ff6561c25");
+
   // -------------------------------------------------------------------------
   // Execute Turn 6: Hinglish Inquiry
   // -------------------------------------------------------------------------
