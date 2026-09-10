@@ -456,6 +456,7 @@ export function resolveVercelToken(): string {
   const envToken = (process.env.VERCEL_AUTH_TOKEN ?? process.env.VERCEL_TOKEN ?? "").trim();
   if (envToken && !envToken.includes("[SENSITIVE]")) return envToken;
 
+  if (process.env.VERCEL) return "";
   try {
     const candidatePaths = [
       path.join(process.env.APPDATA || "", "xdg.data", "com.vercel.cli", "auth.json"),
@@ -463,8 +464,8 @@ export function resolveVercelToken(): string {
       path.join(os.homedir(), ".vercel", "auth.json"),
     ];
     for (const p of candidatePaths) {
-      if (fs.existsSync(p)) {
-        const parsed = JSON.parse(fs.readFileSync(p, "utf8"));
+      if (fs.existsSync(/*turbopackIgnore: true*/ p)) {
+        const parsed = JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ p, "utf8"));
         if (parsed.token) return parsed.token;
       }
     }

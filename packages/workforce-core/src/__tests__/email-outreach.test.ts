@@ -9,6 +9,10 @@ const mockLead: CanonicalLead = {
   id: "lead_test_001",
   tenantId: "466e6195-a9f6-4576-8271-29fdae61c18a",
   status: "QUALIFIED",
+  source: "hermes_research",
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+  lastVerifiedAt: new Date().toISOString(),
   identity: {
     companyName: "Raipur Solar Tech Industries",
     normalizedCompanyName: "raipur solar tech",
@@ -53,12 +57,6 @@ const mockLead: CanonicalLead = {
     consentState: "LEGITIMATE_INTEREST_B2B",
     whatsappOptInReady: true,
     reason: "Qualified B2B prospect with verified contact details",
-  },
-  crmMetadata: {
-    firstDiscoveredAt: new Date().toISOString(),
-    lastSeenAt: new Date().toISOString(),
-    sourceDistribution: { google_places: 1 },
-    verificationScore: 90,
   },
 };
 
