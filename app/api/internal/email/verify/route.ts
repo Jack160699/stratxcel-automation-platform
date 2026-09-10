@@ -7,11 +7,12 @@ export const dynamic = "force-dynamic";
 
 function isAuthorized(req: NextRequest): boolean {
   const allowedSecrets = [
+    process.env.WHATSAPP_VERIFY_TOKEN,
+    process.env.META_WEBHOOK_VERIFY_TOKEN,
     process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
     process.env.CRON_SECRET,
     process.env.AI_DIAGNOSTICS_SECRET,
     process.env.STRATXCEL_AGENT_CHANNEL_SECRET,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   ].filter(Boolean) as string[];
 
   const adminHeader = req.headers.get("x-stratxcel-admin-secret")?.trim();
