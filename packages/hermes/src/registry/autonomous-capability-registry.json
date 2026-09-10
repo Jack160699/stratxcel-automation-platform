@@ -480,15 +480,16 @@
         "whatsapp_business_messaging",
         "whatsapp_business_management"
       ],
-      "status": "E_REQUIRES_MANUAL_CREDENTIAL",
-      "verification_status": "PARTIALLY_VERIFIED_WEBHOOK_LIVE_OUTBOUND_DISABLED",
-      "verification_evidence": "GET webhook handshake live HTTP 200 on www.stratxcel.in/api/platform/whatsapp/webhook. Outbound disabled: WHATSAPP_TOKEN is placeholder (len=11), WHATSAPP_INTEGRATION_MODE=disabled.",
+      "status": "A_CONNECTED_AND_VERIFIED",
+      "verification_status": "VERIFIED_LIVE",
+      "verification_evidence": "Production runtime authenticated to Meta WhatsApp Business Cloud API. Outbound outreach live-verified with real provider message IDs. Inbound webhook live-verified at /api/platform/whatsapp/webhook and on EC2 stratxcel-whatsapp-webhook (:8081).",
       "allowed_actions": [
         "receive_webhooks",
-        "route_commands_in_simulation"
+        "send_messages",
+        "send_templates"
       ],
       "restricted_actions": [
-        "sending_live_customer_outbound_without_real_token"
+        "sending_unsolicited_spam"
       ],
       "dependencies": [
         "Meta System User Permanent Token",
@@ -501,6 +502,52 @@
       "fallbacks": [
         "email.resend",
         "founder_computer_browser_whatsapp_web"
+      ]
+    },
+    {
+      "capability_name": "whatsapp.inbound_sales_agent",
+      "category": "COMMUNICATION",
+      "description": "Autonomous inbound WhatsApp sales agent routed via Hermes Revenue Brain and WhatsApp Sales Engine with multi-turn business diagnosis, language adaptation (English, Hindi, Hinglish), canonical catalog pricing enforcement, and CRM opportunity qualification",
+      "provider": "Meta WhatsApp Business Platform & StratXcel Hermes Revenue Brain",
+      "access_method": "api",
+      "mcp_server": null,
+      "transport": "rest_and_queue",
+      "environment": "PRODUCTION",
+      "authentication": "META_WEBHOOK_SECRET, WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID",
+      "permissions": [
+        "whatsapp_business_messaging",
+        "whatsapp_business_management"
+      ],
+      "status": "A_CONNECTED_AND_VERIFIED",
+      "verification_status": "VERIFIED_LIVE_MULTI_TURN",
+      "verification_evidence": "Live multi-turn unknown contact test verified from Meta WhatsApp to EC2 worker fleet (stratxcel-whatsapp-webhook and stratxcel-whatsapp-processor). Inbound inquiries ('Hi, what do you do?', 'I run a gym.', 'I already have a website.', 'I need more customers.', 'How much?') routed directly to Hermes Revenue Brain and WhatsApp Sales Engine. Replaced canned template fallback with intelligent consultative diagnosis, canonical pricing (₹3,000/₹5,000/₹10,000 websites; ₹5,000/mo SEO min 3-mo; ₹3,500/₹5,000 social media; ₹3,000/mo Google Maps), and CRM lead updates. Live Meta delivery confirmed with provider message IDs wamid.HBgMOTE2MjY3OTc5NzgwFQIAERgSMTJCODNGNzYwQTNEMjVDMjQ3AA==, wamid.HBgMOTE2MjY3OTc5NzgwFQIAERgSMEMzRjY2ODI3MENFOEQ4NDBBAA==, wamid.HBgMOTE2MjY3OTc5NzgwFQIAERgSMUQzM0QxQjdCN0JDRUU3OERBAA==, wamid.HBgMOTE2MjY3OTc5NzgwFQIAERgSNUFDNTUzQTUwMzkzMzhFOTE0AA==, wamid.HBgMOTE2MjY3OTc5NzgwFQIAERgSQkMzMUI1QTE4QkJDMzc2OUNFAA==.",
+      "allowed_actions": [
+        "receive_inbound_inquiries",
+        "diagnose_prospect_business",
+        "consultative_sales_replies",
+        "language_adaptation",
+        "qualify_crm_opportunities",
+        "quote_canonical_pricing",
+        "handle_objections_and_opt_outs"
+      ],
+      "restricted_actions": [
+        "inventing_non_canonical_pricing",
+        "blind_pitching_unneeded_services",
+        "spamming_outside_business_hours"
+      ],
+      "dependencies": [
+        "Meta Webhook Subscription",
+        "stratxcel-whatsapp-webhook (:8081)",
+        "stratxcel-whatsapp-processor (:8084)",
+        "WhatsAppSalesEngine (@stratxcel/revenue-ops)",
+        "Hermes Revenue Brain"
+      ],
+      "cost": "Meta conversation fees (~₹0.40 - ₹0.80 per business conversation in India)",
+      "rate_limits": "Meta Messaging Tier limits (Tier 1: 1,000 unique recipients / 24h)",
+      "tenant_scope": "COMPANY",
+      "fallbacks": [
+        "human_agent_handoff_governance",
+        "founder_command_inbox_notification"
       ]
     },
     {

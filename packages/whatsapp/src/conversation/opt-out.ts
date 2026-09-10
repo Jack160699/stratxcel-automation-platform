@@ -1,4 +1,11 @@
-const OPT_OUT_PATTERNS = [/^stop$/i, /^unsubscribe$/i, /^opt\s*out$/i, /^cancel$/i, /do not (contact|message|text) me/i];
+const OPT_OUT_PATTERNS = [
+  /^stop$/i,
+  /^unsubscribe$/i,
+  /^opt\s*out$/i,
+  /^cancel$/i,
+  /do not (contact|message|text) me/i,
+  /^stop\s+(messaging|texting|contacting)(\s+me)?\.?$/i,
+];
 
 /**
  * Pure and deliberately conservative: matches the legacy bot's stated

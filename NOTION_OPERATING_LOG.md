@@ -563,3 +563,37 @@
   - Vercel Production Site: `https://www.stratxcel.in` active (`HTTP/1.1 200 OK`).
   - Git Commits: `e25ba387`, `12355007` pushed to `origin/main`.
 
+### Cycle 8 — Real Inbound WhatsApp → Hermes Revenue Brain & WhatsApp Sales Agent Live Verification
+- **Timestamp**: 2026-09-11T02:40:00+05:30
+- **Objective**: Fix the production gap where unknown contacts sending inbound WhatsApp messages (e.g. "Hi, what do you do?") received a canned fallback ("Thanks for reaching out. Someone from our team will get back to you shortly..."). Route all commercial inbound inquiries directly to the autonomous Hermes Revenue Brain & WhatsApp Sales Agent.
+- **Root Cause & Architectural Trace**:
+  - Found in `packages/whatsapp/src/conversation/process-inbound.ts`: when `compileGoalToMission(input.message.body)` failed to match a rigid keyword, the router defaulted to `composeProposedResponse()` from `templates.ts`, generating the canned static acknowledgement.
+  - Resolved by routing all commercial inbound messages through `WhatsAppSalesEngine.processInboundTurn(...)` in `@stratxcel/revenue-ops`, loading multi-turn history from `whatsapp_messages`, applying 17-dimension business diagnosis, detecting psychological state, adapting language (English/Hindi/Hinglish), quoting canonical catalog pricing, updating CRM lead metadata, and executing outbound delivery through the canonical Meta choke point.
+- **Live Multi-Turn Production Verification (Recipient `916267979780`)**:
+  - **Turn 1**: Inbound: `"Hi, what do you do?"`
+    - Response: *"Hey! We help businesses grow online through high-converting websites, Google Maps search visibility, SEO, and direct customer lead generation. What kind of business are you running?"*
+    - Meta Provider ID: `wamid.HBgMOTE2MjY3OTc5NzgwFQIAERgSMTJCODNGNzYwQTNEMjVDMjQ3AA==` (Status: `delivered`).
+  - **Turn 2**: Inbound: `"I run a gym."`
+    - Response: *"Awesome! For gyms and fitness studios, getting new members usually comes from either Google Maps local search or targeted social ads with direct WhatsApp trial bookings. Do you already have a website, or are you looking to start from scratch?"*
+    - Meta Provider ID: `wamid.HBgMOTE2MjY3OTc5NzgwFQIAERgSMEMzRjY2ODI3MENFOEQ4NDBBAA==` (Status: `delivered`).
+  - **Turn 3**: Inbound: `"I already have a website."`
+    - Diagnosis Action: Pitching a duplicate website ruled out as redundant.
+    - Response: *"Got it! Since your website is already active, pitching another website would be redundant. The biggest growth lever for gyms is getting local fitness seekers to find you first on Google Maps (Local SEO) or driving direct membership inquiries to your WhatsApp. What's your biggest priority right now — more footfall, or filling specific training batches?"*
+    - Meta Provider ID: `wamid.HBgMOTE2MjY3OTc5NzgwFQIAERgSMUQzM0QxQjdCN0JDRUU3OERBAA==` (Status: `delivered`).
+  - **Turn 4**: Inbound: `"I need more customers."`
+    - Diagnosis Action: Prescribed Google Maps growth and social media lead funnel.
+    - Response: *"Understood. For a gym with an existing website, our Google Business / Maps Growth setup (starting at ₹3,000/month) or Social Media Management (₹3,500/30 days) is the most effective path. That ensures anyone searching 'gym near me' in your area finds you at the top and messages your front desk directly. Would you like to see how that works for your location?"*
+    - Meta Provider ID: `wamid.HBgMOTE2MjY3OTc5NzgwFQIAERgSNUFDNTUzQTUwMzkzMzhFOTE0AA==` (Status: `delivered`).
+  - **Turn 5**: Inbound: `"How much?"`
+    - Diagnosis Action: Delivered canonical pricing breakdown with zero invented discounts.
+    - Response: Strict canonical rates: Google Business / Maps Growth: ₹3,000/month; Social Media Management: ₹3,500/month (Standard) or ₹5,000/month (Premium); Continuous SEO: ₹5,000/month (3-month minimum commitment: ₹15,000); Websites: Normal ₹3,000, Premium ₹5,000, Customized ₹10,000.
+    - Meta Provider ID: `wamid.HBgMOTE2MjY3OTc5NzgwFQIAERgSQkMzMUI1QTE4QkJDMzc2OUNFAA==` (Status: `delivered`).
+- **Additional Verification**:
+  - Hindi & Hinglish natural adaptation: Tested and verified.
+  - Hesitation handling ("Seems expensive"): Addresses value without price dumping.
+  - Quiet period / timing compliance: 48h respectful follow-up on "I'll think about it".
+  - Opt-out suppression: Expanded `OPT_OUT_PATTERNS` to catch `"Stop messaging me."` without human spam.
+- **Capability State Update**:
+  - `whatsapp.inbound_sales_agent`: **A (CONNECTED + VERIFIED)**.
+  - `messaging.whatsapp_cloud`: **A (CONNECTED + VERIFIED)**.
+
