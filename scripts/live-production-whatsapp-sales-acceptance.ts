@@ -29,6 +29,7 @@ async function main() {
       if (match) {
         const k = match[1].trim();
         const v = match[2].trim().replace(/^['"]|['"]$/g, "");
+        process.env[k] = v;
         if (k === "NEXT_PUBLIC_SUPABASE_URL") supabaseUrl = v;
         if (k === "SUPABASE_SERVICE_ROLE_KEY") supabaseKey = v;
         if (k === "WHATSAPP_TOKEN") whatsappToken = v;
