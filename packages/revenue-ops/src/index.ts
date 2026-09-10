@@ -15,3 +15,4 @@ export * from "./sales-specialists.ts";
 export * from "./capability-requirements.ts";
 export * from "./orchestrator.ts";
 export * from "./growth-signals.ts";
+export * from "./partner-commission.ts";

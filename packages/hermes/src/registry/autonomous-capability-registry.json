@@ -1012,6 +1012,44 @@
       "fallbacks": [
         "internal_site_telemetry"
       ]
+    },
+    {
+      "capability_name": "revenue_ops.partner_commission",
+      "category": "FINANCE",
+      "description": "Autonomous commercial partner referral commission computation, payout eligibility evaluation, and multi-tier revenue attribution accounting (pipeline, signed, paid, GST tax, platform net, partner payable, retained margin).",
+      "provider": "StratXcel Internal Revenue Engine",
+      "access_method": "typescript_package",
+      "mcp_server": null,
+      "transport": "in_process",
+      "environment": "WORKER_OR_WEB",
+      "authentication": "INTERNAL_TENANT_SECURITY",
+      "permissions": [
+        "revenue:calculate_commission",
+        "revenue:reconcile_payout",
+        "revenue:ledger_record"
+      ],
+      "status": "A_CONNECTED_AND_VERIFIED",
+      "verification_status": "VERIFIED_REAL_EXECUTION",
+      "verification_evidence": "Autonomous Capability Creation (Phase 17): packages/revenue-ops/src/partner-commission.ts built and verified with unit test suite packages/revenue-ops/src/__tests__/partner-commission.test.ts (4/4 PASS). Verified exact Indian GST tax separation (18%), pipeline vs paid revenue distinction, partner payable attribution, and margin retention.",
+      "allowed_actions": [
+        "calculate_commission",
+        "evaluate_payout_eligibility",
+        "reconcile_deal_ledger"
+      ],
+      "restricted_actions": [
+        "fabricating_payouts",
+        "settling_unpaid_deals",
+        "mixing_gross_and_net_margins"
+      ],
+      "dependencies": [
+        "packages/revenue-ops"
+      ],
+      "cost": "FREE_INTERNAL_LOGIC",
+      "rate_limits": "UNLIMITED",
+      "tenant_scope": "TENANT_ISOLATED",
+      "fallbacks": [
+        "manual_finance_approval"
+      ]
     }
   ]
 }
