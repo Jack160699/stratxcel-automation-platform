@@ -575,7 +575,7 @@
     {
       "capability_name": "communication.email_resend",
       "category": "EMAIL",
-      "description": "Transactional and outreach email delivery, customer notifications, and onboarding invites",
+      "description": "Autonomous outbound prospect outreach and transactional email delivery via Resend free tier architecture",
       "provider": "Resend",
       "access_method": "api",
       "mcp_server": null,
@@ -587,24 +587,104 @@
       ],
       "status": "C_AVAILABLE_BUT_NOT_CONNECTED",
       "verification_status": "UNVERIFIED_KEY_NOT_CONFIGURED",
-      "verification_evidence": "Package @stratxcel/email-runtime fully implemented with outbox polling and Resend adapter, but RESEND_API_KEY is not set in any active .env file.",
+      "verification_evidence": "Package @stratxcel/email-runtime and EmailOutreachService fully implemented with idempotency, gatekeeper consent enforcement, Supabase email_outbox persistence, and audit_events logging. RESEND_API_KEY is not provisioned in environment (SETUP_REQUIRED - minimum free-tier key required for live sends).",
       "allowed_actions": [
         "send_email",
         "render_react_email_templates"
       ],
       "restricted_actions": [
-        "sending_to_unverified_domains_without_domain_verification"
+        "sending_to_unverified_domains_without_domain_verification",
+        "outreach_without_gatekeeper_consent_and_qualification"
       ],
       "dependencies": [
-        "RESEND_API_KEY in .env.local",
-        "Domain DNS verification on stratxcel.ai or stratxcel.in"
+        "RESEND_API_KEY in .env.local (Free tier: 100 emails/day at $0)"
       ],
-      "cost": "Resend Free (3,000 emails/mo) or Pro ($20/mo)",
+      "cost": "Resend Free (100 emails/day, 3,000 emails/mo at $0)",
       "rate_limits": "Resend rate limits (10/sec)",
       "tenant_scope": "BOTH",
       "fallbacks": [
         "smtp_fallback",
         "founder_computer_gmail"
+      ]
+    },
+    {
+      "capability_name": "lead_discovery.google_places",
+      "category": "LOCAL_LEAD_DISCOVERY",
+      "description": "First-class local business acquisition via Google Places & Maps API with sub-locality grid expansion, category taxonomy search, and complete place details resolution",
+      "provider": "Google Places API (New)",
+      "access_method": "api",
+      "mcp_server": null,
+      "transport": "rest_client",
+      "environment": "CLOUD_API",
+      "authentication": "GOOGLE_PLACES_API_KEY (Vercel Production Runtime)",
+      "permissions": [
+        "places:autocomplete",
+        "places:details",
+        "places:searchText"
+      ],
+      "status": "A_CONNECTED_AND_VERIFIED",
+      "verification_status": "VERIFIED_REAL_EXECUTION",
+      "verification_evidence": "Live verified via Vercel production runtime endpoint (/api/platform/onboarding/business-search/suggest and /api/platform/site-discovery/resolve). Discovered real solar enterprises across Raipur industrial sub-clusters with verified addresses, phone numbers, and Google Maps CID links.",
+      "allowed_actions": [
+        "search_by_category",
+        "search_by_geography",
+        "resolve_place_details",
+        "extract_phone_and_website"
+      ],
+      "restricted_actions": [
+        "scraping_raw_coordinates_in_violation_of_google_tos"
+      ],
+      "dependencies": [
+        "GOOGLE_PLACES_API_KEY in Vercel Production"
+      ],
+      "cost": "Google Maps Platform Free Tier / Included monthly credit",
+      "rate_limits": "100 QPS",
+      "tenant_scope": "PLATFORM",
+      "fallbacks": [
+        "stratxcel_catalog",
+        "company_websites"
+      ]
+    },
+    {
+      "capability_name": "lead_acquisition.universal_engine",
+      "category": "UNIVERSAL_LEAD_ENGINE",
+      "description": "Provider-neutral universal lead acquisition engine with deterministic SHA-256 deduplication, 6-tier data priority merger, explainable qualification scoring (0-100), and CRM persistence",
+      "provider": "StratXcel Autonomous Core",
+      "access_method": "native_pipeline",
+      "mcp_server": null,
+      "transport": "in_process",
+      "environment": "LOCAL_AND_CLOUD",
+      "authentication": "SUPABASE_SERVICE_ROLE_KEY",
+      "permissions": [
+        "leads:discover",
+        "leads:qualify",
+        "leads:persist",
+        "leads:gate"
+      ],
+      "status": "A_CONNECTED_AND_VERIFIED",
+      "verification_status": "VERIFIED_REAL_EXECUTION",
+      "verification_evidence": "End-to-end verified with real multi-source discovery, SHA-256 deduplication, qualification scoring, CRM persistence into crm_leads, and audit logging into audit_events.",
+      "allowed_actions": [
+        "multi_source_discovery",
+        "identity_resolution",
+        "qualification_scoring",
+        "crm_deduplication",
+        "outreach_gatekeeping"
+      ],
+      "restricted_actions": [
+        "outreach_to_unqualified_or_opted_out_prospects"
+      ],
+      "dependencies": [
+        "Supabase Database",
+        "Google Places Adapter",
+        "Website Crawler Adapter",
+        "Grounded Catalog Adapter"
+      ],
+      "cost": "₹0 / Free-First local runtime",
+      "rate_limits": "Bounded by underlying provider quotas",
+      "tenant_scope": "TENANT_ISOLATED",
+      "fallbacks": [
+        "stratxcel_catalog"
       ]
     },
     {

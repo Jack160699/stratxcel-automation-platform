@@ -45,15 +45,18 @@ import { mergeWithDataPriority } from "./data-priority-merger.ts";
 import { evaluateLeadQualification } from "./qualification-engine.ts";
 import { evaluateOutreachEligibility } from "./outreach-gatekeeper.ts";
 import { createDefaultSourceAdapters } from "./adapters/index.ts";
+import { EmailOutreachService, type OutreachEmailRequest, type OutreachEmailResult } from "./email-outreach.ts";
 
 export interface UniversalEngineOptions {
   adapters?: LeadSourceAdapter[];
   supabaseClient?: SupabaseClient | null;
+  resendApiKey?: string | null;
 }
 
 export class UniversalLeadEngine {
   private adapters: Map<string, LeadSourceAdapter> = new Map();
   private supabase: SupabaseClient | null;
+  private emailOutreach: EmailOutreachService;
 
   constructor(options?: UniversalEngineOptions) {
     const adapterList = options?.adapters || createDefaultSourceAdapters();
@@ -61,6 +64,18 @@ export class UniversalLeadEngine {
       this.adapters.set(adapter.providerKey, adapter);
     }
     this.supabase = options?.supabaseClient || null;
+    this.emailOutreach = new EmailOutreachService({
+      supabaseClient: this.supabase,
+      resendApiKey: options?.resendApiKey,
+    });
+  }
+
+  getEmailOutreachService(): EmailOutreachService {
+    return this.emailOutreach;
+  }
+
+  async dispatchOutreachEmail(request: OutreachEmailRequest): Promise<OutreachEmailResult> {
+    return this.emailOutreach.sendOutreachEmail(request);
   }
 
   /**

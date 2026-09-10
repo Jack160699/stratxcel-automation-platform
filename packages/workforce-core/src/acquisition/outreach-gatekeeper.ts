@@ -59,6 +59,17 @@ export function evaluateOutreachEligibility(
     };
   }
 
+  if (config?.suppressedEmails && identity.normalizedEmail && config.suppressedEmails.has(identity.normalizedEmail)) {
+    return {
+      isEligible: false,
+      preferredChannel: "manual_review",
+      consentState: "OPT_OUT",
+      whatsappOptInReady: false,
+      reason: "Email address is listed in tenant opt-out suppression registry.",
+      suppressionReason: "SUPPRESSED_EMAIL",
+    };
+  }
+
   // 3. Check Qualification Threshold
   if (qualification.qualificationScore < 40 || qualification.icpFitTier === "UNQUALIFIED") {
     return {
