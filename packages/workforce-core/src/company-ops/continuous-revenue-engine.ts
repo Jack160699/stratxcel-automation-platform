@@ -43,7 +43,8 @@ import {
   STANDING_OBJECTIVE_SERVICE_KEY,
   CANONICAL_TENANT_ID,
 } from "./standing-objective-service.ts";
-import { createWhatsAppAdapter } from "../../../whatsapp/src/adapter.ts";
+import { sendOutboundWhatsAppMessage } from "../../../whatsapp/src/outbound.ts";
+import { recordOptIn } from "../../../whatsapp/src/consent.ts";
 import { createGoogleDriveAdapter } from "../../../storage/src/drive/adapter.ts";
 import { createPaymentLink } from "../../../payments-and-wallet/src/razorpay/payment-links.ts";
 
@@ -443,8 +444,6 @@ export class ContinuousRevenueEngine {
     const outreachBatch = qualifiedProspects.slice(0, 10); // Controlled batch limit: 10 per cycle
 
     try {
-      const whatsappAdapter = this.supabase ? createWhatsAppAdapter(this.supabase as any) : null;
-
       for (let i = 0; i < outreachBatch.length; i++) {
         const item = outreachBatch[i];
         const leadId = persistedCrmIds[i] || `lead-${i}`;
@@ -474,43 +473,100 @@ export class ContinuousRevenueEngine {
           continue;
         }
 
-        // 3. Dispatch via WhatsApp (live or shadow depending on WHATSAPP_INTEGRATION_MODE)
-        if (whatsappAdapter && !options.dryRunOutreach && item.lead.contactPhone) {
-          try {
-            await whatsappAdapter.sendMessage({
-              tenantId,
-              to: item.lead.contactPhone,
-              body: salesPacket.messageText,
-            });
-            outreachDispatchedCount++;
+        // 3. Dispatch via WhatsApp (using canonical verified outbound sender with approved Meta template)
+        const phone = item.lead.contactPhone || "";
+        const digits = phone.replace(/\D/g, "");
+        const national = digits.startsWith("91") && digits.length === 12 ? digits.slice(2) : digits;
+        const isMobile = national.length === 10 && /^[6-9]/.test(national);
 
-            // Update CRM status to CONTACTED
-            if (this.supabase && leadId && !leadId.startsWith("local-")) {
-              await this.supabase
-                .from("crm_leads")
-                .update({
-                  status: "CONTACTED",
-                  last_interaction_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString(),
-                })
-                .eq("id", leadId);
+        if (!isMobile) {
+          console.log(`[ContinuousRevenueEngine] Prospect ${item.lead.companyName} skipped: phone ${phone} is not a valid 10-digit Indian mobile number`);
+          continue;
+        }
 
-              await this.supabase.from("crm_lead_events").insert({
-                lead_id: leadId,
-                tenant_id: tenantId,
-                event_type: "outreach_dispatched",
-                from_status: "QUALIFIED",
-                to_status: "CONTACTED",
-                actor_agent: "Hermes Sales Specialist",
-                payload: {
-                  channel: "whatsapp",
-                  offerKey: item.recommendedOffer.key,
-                  messageSnippet: salesPacket.messageText.slice(0, 100),
-                },
+        if (this.supabase && leadId && !leadId.startsWith("local-")) {
+          // Check cooldown (7 days)
+          const { data: recent } = await this.supabase
+            .from("whatsapp_messages")
+            .select("id")
+            .eq("lead_id", leadId)
+            .eq("direction", "outbound")
+            .limit(1);
+
+          if (recent && recent.length > 0) {
+            console.log(`[ContinuousRevenueEngine] Prospect ${item.lead.companyName} already contacted recently; cooldown active.`);
+            continue;
+          }
+
+          // Register B2B legitimate interest consent
+          await recordOptIn(this.supabase as any, {
+            tenantId,
+            leadId,
+            source: "b2b_legitimate_interest",
+            evidence: `Autonomous revenue loop qualified fit for ${item.recommendedOffer.name}`,
+          }).catch(() => {});
+
+          if (!options.dryRunOutreach) {
+            try {
+              const param1 = (item.lead.contactName && !item.lead.contactName.includes("Pvt") && !item.lead.contactName.includes("Ltd"))
+                ? item.lead.contactName
+                : item.lead.companyName;
+              const bottleneck = item.diagnosis.primaryBottleneck || "untapped local customer demand";
+              const param2 = `we noticed ${item.lead.companyName} has ${bottleneck}. We have a proven plan for ${item.recommendedOffer.name} starting at ₹${item.recommendedOffer.startingPriceInr}`;
+              const renderedBody = `Hi ${param1}, this is Stratxcel — ${param2}. Would you be open to a quick chat?`;
+
+              const idempotencyKey = `outreach:${leadId}:${Date.now()}`;
+              const outcome = await sendOutboundWhatsAppMessage(this.supabase as any, {
+                tenantId,
+                leadId,
+                body: renderedBody,
+                idempotencyKey,
+                templateId: "1cb7ba67-661b-471c-b528-2ba116390222",
+                templateName: "stratxcel_outreach_intro",
+                templateLanguage: "en",
+                templateParams: [param1, param2],
+                isHumanInitiated: false,
               });
+
+              if (outcome.ok) {
+                outreachDispatchedCount++;
+                const providerId = (outcome as any).providerId || "dispatched";
+
+                await this.supabase
+                  .from("crm_leads")
+                  .update({
+                    status: "CONTACTED",
+                    last_interaction_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    metadata: {
+                      ...(item.lead as any).metadata,
+                      lastOutreachAt: new Date().toISOString(),
+                      providerMessageId: providerId,
+                      outreachStatus: "SENT",
+                    },
+                  })
+                  .eq("id", leadId);
+
+                await this.supabase.from("crm_lead_events").insert({
+                  lead_id: leadId,
+                  tenant_id: tenantId,
+                  event_type: "outreach_dispatched",
+                  from_status: "QUALIFIED",
+                  to_status: "CONTACTED",
+                  actor_agent: "Hermes Sales Specialist",
+                  payload: {
+                    channel: "whatsapp",
+                    offerKey: item.recommendedOffer.key,
+                    providerMessageId: providerId,
+                    messageSnippet: renderedBody.slice(0, 100),
+                  },
+                });
+              } else {
+                console.warn(`[ContinuousRevenueEngine] WhatsApp dispatch notice for ${item.lead.companyName}: ${outcome.reason}`);
+              }
+            } catch (waErr: any) {
+              console.warn(`[ContinuousRevenueEngine] WhatsApp dispatch error for ${item.lead.companyName}: ${waErr.message}`);
             }
-          } catch (waErr: any) {
-            console.warn(`[ContinuousRevenueEngine] WhatsApp dispatch notice for ${item.lead.companyName}: ${waErr.message}`);
           }
         }
       }

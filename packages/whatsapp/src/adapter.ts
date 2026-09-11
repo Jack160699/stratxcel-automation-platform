@@ -2,6 +2,14 @@ import type { ServiceClient } from "./db.ts";
 import { getIntegrationMode } from "./flags.ts";
 import { IntegrationDisabledError, type SendInteractiveMessageInput, type SendTemplateMessageInput, type SendWhatsAppMessageResult, type WhatsAppAdapter } from "./types.ts";
 
+function cleanWhatsAppRecipient(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10 && /^[6-9]/.test(digits)) {
+    return `91${digits}`;
+  }
+  return digits;
+}
+
 /**
  * The one adapter implementation, branching on mode internally rather than
  * three separate classes — "disabled" and "shadow" share almost everything
@@ -35,27 +43,29 @@ export function createWhatsAppAdapter(supabase: ServiceClient): WhatsAppAdapter 
       }
 
       // mode === "live" — gated entirely behind the env var; not reachable
-      // from any default configuration and not called anywhere in this
-      // codebase yet. Requires WHATSAPP_TOKEN + WHATSAPP_PHONE_NUMBER_ID,
-      // which are never read outside this branch.
+      // from any default configuration. Requires WHATSAPP_TOKEN + WHATSAPP_PHONE_NUMBER_ID,
+      // with safe fallback to canonical verified WABA phone ID.
       const token =
         process.env.WHATSAPP_TOKEN?.trim() ||
         process.env.META_ACCESS_TOKEN?.trim() ||
         process.env.META_WHATSAPP_ACCESS_TOKEN?.trim();
       const phoneNumberId =
         process.env.WHATSAPP_PHONE_NUMBER_ID?.trim() ||
-        process.env.META_WHATSAPP_PHONE_NUMBER_ID?.trim();
+        process.env.META_WHATSAPP_PHONE_NUMBER_ID?.trim() ||
+        "993296527209625";
       const apiVersion = process.env.WHATSAPP_GRAPH_API_VERSION?.trim() ?? "v20.0";
-      if (!token || !phoneNumberId) {
-        throw new Error("WHATSAPP_INTEGRATION_MODE is 'live' but WHATSAPP_TOKEN/WHATSAPP_PHONE_NUMBER_ID are not set");
+      if (!token) {
+        throw new Error("WHATSAPP_INTEGRATION_MODE is 'live' but WHATSAPP_TOKEN is not set");
       }
+
+      const cleanTo = cleanWhatsAppRecipient(input.to);
 
       const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           messaging_product: "whatsapp",
-          to: input.to,
+          to: cleanTo,
           type: "text",
           text: { body: input.body },
         }),
@@ -86,12 +96,14 @@ export function createWhatsAppAdapter(supabase: ServiceClient): WhatsAppAdapter 
         process.env.META_WHATSAPP_ACCESS_TOKEN?.trim();
       const phoneNumberId =
         process.env.WHATSAPP_PHONE_NUMBER_ID?.trim() ||
-        process.env.META_WHATSAPP_PHONE_NUMBER_ID?.trim();
+        process.env.META_WHATSAPP_PHONE_NUMBER_ID?.trim() ||
+        "993296527209625";
       const apiVersion = process.env.WHATSAPP_GRAPH_API_VERSION?.trim() ?? "v20.0";
-      if (!token || !phoneNumberId) throw new Error("WhatsApp live credentials are not set");
+      if (!token) throw new Error("WhatsApp live credentials are not set");
+      const cleanTo = cleanWhatsAppRecipient(input.to);
       const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
         method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ messaging_product: "whatsapp", to: input.to, type: "interactive", interactive: { type: "button", body: { text: input.body }, action: { buttons: input.buttons.map((button) => ({ type: "reply", reply: button })) } } }),
+        body: JSON.stringify({ messaging_product: "whatsapp", to: cleanTo, type: "interactive", interactive: { type: "button", body: { text: input.body }, action: { buttons: input.buttons.map((button) => ({ type: "reply", reply: button })) } } }),
       });
       if (!response.ok) {
         const errData = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
@@ -127,18 +139,21 @@ export function createWhatsAppAdapter(supabase: ServiceClient): WhatsAppAdapter 
         process.env.META_WHATSAPP_ACCESS_TOKEN?.trim();
       const phoneNumberId =
         process.env.WHATSAPP_PHONE_NUMBER_ID?.trim() ||
-        process.env.META_WHATSAPP_PHONE_NUMBER_ID?.trim();
+        process.env.META_WHATSAPP_PHONE_NUMBER_ID?.trim() ||
+        "993296527209625";
       const apiVersion = process.env.WHATSAPP_GRAPH_API_VERSION?.trim() ?? "v20.0";
-      if (!token || !phoneNumberId) {
-        throw new Error("WHATSAPP_INTEGRATION_MODE is 'live' but WHATSAPP_TOKEN/WHATSAPP_PHONE_NUMBER_ID are not set");
+      if (!token) {
+        throw new Error("WHATSAPP_INTEGRATION_MODE is 'live' but WHATSAPP_TOKEN is not set");
       }
+
+      const cleanTo = cleanWhatsAppRecipient(input.to);
 
       const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           messaging_product: "whatsapp",
-          to: input.to,
+          to: cleanTo,
           type: "template",
           template: {
             name: input.templateName,

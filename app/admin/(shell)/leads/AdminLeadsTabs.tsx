@@ -3,37 +3,34 @@
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { CrmWorkspace } from "@/components/crm/CrmWorkspace";
+import { LeadsPipelineTable } from "@/components/crm/LeadsPipelineTable";
 import { SEND_READY, SEND_DISABLED_REASON } from "@/components/crm/send-readiness";
 
-type Tab = "crm" | "website";
+type Tab = "conversations" | "leads" | "website";
 
 /**
- * Primary tab: the central Admin CRM — CrmWorkspace with no `tenantId`,
- * aggregating every agency client the authenticated staff member is
- * authorized to manage (requireAdminAggregateReadContext server-side), so
- * this opens directly with real data with no client workspace selection
- * required. Secondary tab: Stratxcel's own website contact-form inbox
- * (stratxcel_contact_messages), preserved exactly as it was (server-rendered
- * by the page, passed in as `websiteInquiries`).
- *
- * Tab state is driven by the URL (`?tab=crm|website`), not local component
- * state — the default (query param absent, or any value other than
- * "website") is always "crm", so this is unambiguous, shareable, and
- * survives a reload the same way every time. This exists specifically
- * because "Admin Leads must default to CRM leads, not website inquiries"
- * is a mandatory acceptance requirement.
+ * Clean CRM Data Model & Workspace:
+ * - Tab 1: "conversations" (WhatsApp Conversations) — CrmWorkspace displaying ONLY leads
+ *   with real active WhatsApp message history. Zero ghost conversations with zero messages.
+ * - Tab 2: "leads" (All Leads & Pipeline) — LeadsPipelineTable displaying all discovered
+ *   and qualified prospects with 17-dimension diagnosis, canonical offers, and outreach triggers.
+ * - Tab 3: "website" (Website Inquiries) — Preserved website contact-form inbox.
  */
 export function AdminLeadsTabs({ websiteInquiries, websiteInquiryCount }: { websiteInquiries: ReactNode; websiteInquiryCount: number }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
 
-  const tab: Tab = searchParams.get("tab") === "website" ? "website" : "crm";
+  const rawTab = searchParams.get("tab");
+  const tab: Tab = rawTab === "website" ? "website" : rawTab === "leads" ? "leads" : "conversations";
 
   function setTab(next: Tab) {
     const params = new URLSearchParams(searchParams.toString());
-    if (next === "crm") params.delete("tab");
-    else params.set("tab", next);
+    if (next === "conversations") {
+      params.delete("tab");
+    } else {
+      params.set("tab", next);
+    }
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
@@ -41,29 +38,34 @@ export function AdminLeadsTabs({ websiteInquiries, websiteInquiryCount }: { webs
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="flex shrink-0 items-center gap-1 border-b border-sx-border px-1">
-        <TabButton active={tab === "crm"} onClick={() => setTab("crm")}>
-          CRM
+        <TabButton active={tab === "conversations"} onClick={() => setTab("conversations")}>
+          WhatsApp Conversations
+        </TabButton>
+        <TabButton active={tab === "leads"} onClick={() => setTab("leads")}>
+          All Leads & Pipeline
         </TabButton>
         <TabButton active={tab === "website"} onClick={() => setTab("website")}>
           Website inquiries {websiteInquiryCount > 0 ? `(${websiteInquiryCount})` : ""}
         </TabButton>
       </div>
 
-      {tab === "crm" ? (
+      {tab === "conversations" ? (
         <div className="min-h-0 flex-1">
-          {/*
-            Central Admin CRM: no tenantId -- CrmWorkspace aggregates every
-            client this staff member is authorized to manage
-            (requireAdminAggregateReadContext server-side), not just
-            whichever tenant the ClientSwitcher happens to have active.
-            role="owner" matches how staff-support access already bypasses
-            per-tenant role checks server-side for every mutation route.
-          */}
           <CrmWorkspace
             role="owner"
-            title="CRM"
+            title="WhatsApp Conversations"
             sendReady={SEND_READY}
             sendDisabledReason={SEND_DISABLED_REASON}
+          />
+        </div>
+      ) : tab === "leads" ? (
+        <div className="min-h-0 flex-1">
+          <LeadsPipelineTable
+            onOpenConversation={(leadId) => {
+              const params = new URLSearchParams();
+              params.set("tab", "conversations");
+              router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+            }}
           />
         </div>
       ) : (
