@@ -98,7 +98,8 @@ export async function POST(request: Request) {
       folderCategory: "reports",
     });
   } catch (err) {
-    uploadError = err instanceof Error ? err.message : "Unknown upload error";
+    uploadError = err instanceof Error ? `${err.name}: ${err.message}${err.stack ? `\n${err.stack}` : ""}` : String(err);
+    console.error("[drive-test] uploadFile exception:", err);
   }
 
   if (!uploadResult || !uploadResult.providerFileId) {
@@ -109,9 +110,10 @@ export async function POST(request: Request) {
         detail: uploadError || "uploadFile returned no providerFileId",
         step: "UPLOAD",
       },
-      { status: 502 }
+      { status: 422 }
     );
   }
+
 
   const driveFileId = uploadResult.providerFileId;
   const driveUrl = `https://drive.google.com/file/d/${driveFileId}/view`;
