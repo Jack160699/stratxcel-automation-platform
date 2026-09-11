@@ -8,10 +8,11 @@ export async function getConnection(
 ): Promise<StorageConnectionRow | null> {
   const { data, error } = await supabase
     .from("storage_connections")
-    .select("id, tenant_id, provider, status, account_email, scopes, root_folder_id, last_error, connected_at, updated_at")
+    .select("id, tenant_id, provider, status, account_email, encrypted_token_ref, scopes, root_folder_id, last_error, connected_at, updated_at")
     .eq("tenant_id", tenantId)
     .eq("provider", provider)
     .maybeSingle();
+
   if (error) throw new Error(`getConnection: ${error.message}`);
   return (data as StorageConnectionRow) ?? null;
 }
