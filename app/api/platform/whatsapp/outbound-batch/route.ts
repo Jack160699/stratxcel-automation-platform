@@ -15,6 +15,9 @@ function isValidIndianMobile(phone?: string | null): boolean {
   if (!phone) return false;
   const digits = phone.replace(/\D/g, "");
   const national = digits.startsWith("91") && digits.length === 12 ? digits.slice(2) : digits;
+  if (national.startsWith("771") || national.startsWith("788") || national.startsWith("11") || national.startsWith("22")) {
+    return false;
+  }
   return national.length === 10 && /^[6-9]/.test(national);
 }
 

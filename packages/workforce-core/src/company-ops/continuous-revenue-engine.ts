@@ -477,7 +477,8 @@ export class ContinuousRevenueEngine {
         const phone = item.lead.contactPhone || "";
         const digits = phone.replace(/\D/g, "");
         const national = digits.startsWith("91") && digits.length === 12 ? digits.slice(2) : digits;
-        const isMobile = national.length === 10 && /^[6-9]/.test(national);
+        const isLandline = national.startsWith("771") || national.startsWith("788") || national.startsWith("11") || national.startsWith("22");
+        const isMobile = !isLandline && national.length === 10 && /^[6-9]/.test(national);
 
         if (!isMobile) {
           console.log(`[ContinuousRevenueEngine] Prospect ${item.lead.companyName} skipped: phone ${phone} is not a valid 10-digit Indian mobile number`);
@@ -547,14 +548,13 @@ export class ContinuousRevenueEngine {
                   })
                   .eq("id", leadId);
 
-                await this.supabase.from("crm_lead_events").insert({
-                  lead_id: leadId,
+                await this.supabase.from("audit_events").insert({
                   tenant_id: tenantId,
-                  event_type: "outreach_dispatched",
-                  from_status: "QUALIFIED",
-                  to_status: "CONTACTED",
-                  actor_agent: "Hermes Sales Specialist",
-                  payload: {
+                  actor_kind: "system",
+                  action: "crm.outreach_dispatched",
+                  target_type: "lead",
+                  target_id: leadId,
+                  metadata: {
                     channel: "whatsapp",
                     offerKey: item.recommendedOffer.key,
                     providerMessageId: providerId,
