@@ -43,10 +43,6 @@
     {
       "path": "/api/platform/revenue/daily-review",
       "schedule": "30 17 * * *"
-    },
-    {
-      "path": "/api/platform/missions/standing-objective",
-      "schedule": "*/30 * * * *"
     }
   ]
 }
