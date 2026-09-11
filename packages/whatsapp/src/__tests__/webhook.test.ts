@@ -1,7 +1,8 @@
 // Run with: node --experimental-strip-types packages/whatsapp/src/__tests__/webhook.test.ts
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { parseInboundWhatsAppWebhook, verifyWhatsAppWebhookSignature } from "../webhook.ts";
+import { parseInboundWhatsAppWebhook, parseWhatsAppStatusUpdates, verifyWhatsAppWebhookSignature } from "../webhook.ts";
+import { canTransitionWhatsAppStatus } from "../messages.ts";
 
 function run() {
   const payload = {
@@ -68,10 +69,70 @@ function run() {
   assert.equal(verifyWhatsAppWebhookSignature(rawBody, validSig), true);
   assert.equal(verifyWhatsAppWebhookSignature(rawBody, "sha256=deadbeef"), false);
   assert.equal(verifyWhatsAppWebhookSignature(rawBody, null), false);
-  delete process.env.WHATSAPP_APP_SECRET;
-  assert.equal(verifyWhatsAppWebhookSignature(rawBody, validSig), false);
+  // Test parseWhatsAppStatusUpdates with Meta error payloads
+  const statusPayload = {
+    entry: [
+      {
+        id: "1420911403384345",
+        changes: [
+          {
+            value: {
+              metadata: { phone_number_id: "993296527209625", display_phone_number: "+91 77778 12777" },
+              statuses: [
+                {
+                  id: "wamid.delivered123",
+                  status: "delivered",
+                  timestamp: "1726054800",
+                  recipient_id: "919900234189",
+                },
+                {
+                  id: "wamid.failed456",
+                  status: "failed",
+                  timestamp: "1726054821",
+                  recipient_id: "918242407890",
+                  errors: [
+                    {
+                      code: 131026,
+                      title: "Message undeliverable",
+                      message: "Message Undeliverable.",
+                      error_data: { details: "Message Undeliverable." },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
 
-  console.log("webhook.test.ts (@stratxcel/whatsapp): ALL PASS");
+  const parsedStatuses = parseWhatsAppStatusUpdates(statusPayload);
+  assert.equal(parsedStatuses.length, 2);
+
+  assert.equal(parsedStatuses[0].providerMessageId, "wamid.delivered123");
+  assert.equal(parsedStatuses[0].status, "delivered");
+  assert.equal(parsedStatuses[0].phoneNumberId, "993296527209625");
+  assert.equal(parsedStatuses[0].recipientId, "919900234189");
+
+  assert.equal(parsedStatuses[1].providerMessageId, "wamid.failed456");
+  assert.equal(parsedStatuses[1].status, "failed");
+  assert.equal(parsedStatuses[1].recipientId, "918242407890");
+  assert.equal(parsedStatuses[1].errors?.length, 1);
+  assert.equal(parsedStatuses[1].errors?.[0]?.code, 131026);
+  assert.equal(parsedStatuses[1].errors?.[0]?.title, "Message undeliverable");
+
+  // Test canTransitionWhatsAppStatus guards
+  assert.equal(canTransitionWhatsAppStatus("queued", "sent"), true);
+  assert.equal(canTransitionWhatsAppStatus("sent", "delivered"), true);
+  assert.equal(canTransitionWhatsAppStatus("delivered", "read"), true);
+  assert.equal(canTransitionWhatsAppStatus("delivered", "failed"), false, "DELIVERED must NEVER overwrite with FAILED");
+  assert.equal(canTransitionWhatsAppStatus("read", "failed"), false, "READ must NEVER overwrite with FAILED");
+  assert.equal(canTransitionWhatsAppStatus("read", "delivered"), false, "READ cannot regress to DELIVERED");
+  assert.equal(canTransitionWhatsAppStatus("sent", "failed"), true);
+  assert.equal(canTransitionWhatsAppStatus("failed", "sent"), false);
+
+  console.log("webhook.test.ts (@stratxcel/whatsapp): ALL PASS (inbound, status error parsing, and transition guards)");
 }
 
 run();

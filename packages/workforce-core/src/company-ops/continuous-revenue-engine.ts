@@ -507,6 +507,37 @@ export class ContinuousRevenueEngine {
             evidence: `Autonomous revenue loop qualified fit for ${item.recommendedOffer.name}`,
           }).catch(() => {});
 
+          // Landline check to prevent doomed WhatsApp sends to wirelines
+          const rawDigits = (item.lead.contactPhone || "").replace(/\D/g, "");
+          const national = rawDigits.startsWith("91") && rawDigits.length === 12 ? rawDigits.slice(2) : rawDigits;
+          const isLandline = ["802", "803", "804", "805", "806", "807", "808", "824", "821", "831", "836", "771", "788", "79", "11", "22", "33", "44", "40", "20"].some(pfx => national.startsWith(pfx));
+
+          if (isLandline) {
+            await this.supabase
+              .from("crm_leads")
+              .update({
+                status: "OUTREACH_FAILED",
+                updated_at: new Date().toISOString(),
+                metadata: {
+                  ...(item.lead as any).metadata,
+                  outreachFailureCategory: "NOT_A_WHATSAPP_USER",
+                  outreachFailureReason: "Fixed wireline landline — routed to email fallback",
+                },
+              })
+              .eq("id", leadId);
+
+            if (item.lead.contactEmail) {
+              await this.supabase.from("crm_lead_events").insert({
+                lead_id: leadId,
+                tenant_id: tenantId,
+                event_type: "EMAIL_FALLBACK_ELIGIBLE",
+                description: `Fixed landline wireline detected (${item.lead.contactPhone}). Activated email fallback to ${item.lead.contactEmail}.`,
+                metadata: { contact_email: item.lead.contactEmail, reason: "FIXED_LANDLINE" },
+              }).catch(() => {});
+            }
+            continue;
+          }
+
           if (!options.dryRunOutreach) {
             try {
               const param1 = (item.lead.contactName && !item.lead.contactName.includes("Pvt") && !item.lead.contactName.includes("Ltd"))
@@ -563,6 +594,30 @@ export class ContinuousRevenueEngine {
                 });
               } else {
                 console.warn(`[ContinuousRevenueEngine] WhatsApp dispatch notice for ${item.lead.companyName}: ${outcome.reason}`);
+
+                await this.supabase
+                  .from("crm_leads")
+                  .update({
+                    status: "OUTREACH_FAILED",
+                    updated_at: new Date().toISOString(),
+                    metadata: {
+                      ...(item.lead as any).metadata,
+                      outreachFailureCategory: "PROVIDER_REJECTION",
+                      outreachFailureReason: outcome.reason,
+                      outreachFailedAt: new Date().toISOString(),
+                    },
+                  })
+                  .eq("id", leadId);
+
+                if (item.lead.contactEmail) {
+                  await this.supabase.from("crm_lead_events").insert({
+                    lead_id: leadId,
+                    tenant_id: tenantId,
+                    event_type: "EMAIL_FALLBACK_ELIGIBLE",
+                    description: `WhatsApp send failed (${outcome.reason}). Activated email fallback to ${item.lead.contactEmail}.`,
+                    metadata: { contact_email: item.lead.contactEmail, reason: outcome.reason },
+                  }).catch(() => {});
+                }
               }
             } catch (waErr: any) {
               console.warn(`[ContinuousRevenueEngine] WhatsApp dispatch error for ${item.lead.companyName}: ${waErr.message}`);

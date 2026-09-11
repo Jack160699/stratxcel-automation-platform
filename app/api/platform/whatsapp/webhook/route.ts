@@ -82,16 +82,110 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "malformed payload" }, { status: 400 });
   }
 
-  // 1. Process delivery receipts (sent / delivered / read)
+  // 1. Process delivery receipts (sent / delivered / read / failed)
   for (const update of statusUpdates) {
     try {
       const binding = await findActiveBindingByPhoneNumberId(service as never, update.phoneNumberId);
       if (binding) {
+        const primaryError = update.errors && update.errors.length > 0 ? update.errors[0] : null;
+        const errorPayload = primaryError
+          ? {
+              provider: "meta",
+              code: primaryError.code,
+              title: primaryError.title,
+              message: primaryError.message,
+              details: primaryError.error_data?.details || null,
+              failed_at: new Date().toISOString(),
+            }
+          : update.status === "failed"
+          ? {
+              provider: "meta",
+              code: 131026,
+              title: "Message undeliverable",
+              message: "Recipient is not a valid WhatsApp user or destination cannot receive messages",
+              failed_at: new Date().toISOString(),
+            }
+          : null;
+
         await updateWhatsAppMessageStatus(service as never, {
           tenantId: binding.tenant_id,
           providerMessageId: update.providerMessageId,
           status: update.status,
+          error: errorPayload,
         });
+
+        // When delivery fails, update lead status, categorize failure, and evaluate email fallback
+        if (update.status === "failed") {
+          const { data: msgRow } = await service
+            .from("whatsapp_messages")
+            .select("lead_id")
+            .eq("tenant_id", binding.tenant_id)
+            .eq("provider_message_id", update.providerMessageId)
+            .maybeSingle();
+
+          if (msgRow?.lead_id) {
+            let failureCategory = "PROVIDER_REJECTION";
+            if (primaryError?.code === 131026) {
+              failureCategory = "NOT_A_WHATSAPP_USER";
+            } else if (primaryError?.code === 131047) {
+              failureCategory = "BUSINESS_INITIATED_POLICY";
+            } else if (primaryError?.code === 131031) {
+              failureCategory = "RATE_LIMIT";
+            } else if (primaryError?.code === 132000 || primaryError?.code === 132001) {
+              failureCategory = "TEMPLATE_ERROR";
+            }
+
+            const { data: lead } = await service
+              .from("crm_leads")
+              .select("id, contact_email, metadata")
+              .eq("id", msgRow.lead_id)
+              .maybeSingle();
+
+            if (lead) {
+              const currentMeta = (lead.metadata as Record<string, unknown>) || {};
+              await service
+                .from("crm_leads")
+                .update({
+                  status: "OUTREACH_FAILED",
+                  updated_at: new Date().toISOString(),
+                  metadata: {
+                    ...currentMeta,
+                    outreachFailureReason: primaryError?.message || primaryError?.title || "Message undeliverable",
+                    outreachFailureCode: primaryError?.code || 131026,
+                    outreachFailureCategory: failureCategory,
+                    failedAt: new Date().toISOString(),
+                  },
+                })
+                .eq("id", lead.id);
+
+              await service.from("crm_lead_events").insert({
+                lead_id: lead.id,
+                tenant_id: binding.tenant_id,
+                event_type: "OUTREACH_FAILED",
+                description: `WhatsApp delivery failed: ${primaryError?.title || "Undeliverable"} (${primaryError?.code || 131026}). Category: ${failureCategory}`,
+                metadata: {
+                  code: primaryError?.code || 131026,
+                  category: failureCategory,
+                  providerMessageId: update.providerMessageId,
+                },
+              });
+
+              // Check for Email Fallback
+              if (lead.contact_email && !currentMeta.emailFallbackSent) {
+                await service.from("crm_lead_events").insert({
+                  lead_id: lead.id,
+                  tenant_id: binding.tenant_id,
+                  event_type: "EMAIL_FALLBACK_ELIGIBLE",
+                  description: `WhatsApp undeliverable (${failureCategory}). Eligible for email outreach fallback to ${lead.contact_email}`,
+                  metadata: {
+                    contact_email: lead.contact_email,
+                    reason: failureCategory,
+                  },
+                });
+              }
+            }
+          }
+        }
       }
     } catch (sErr) {
       console.warn("[whatsapp-webhook] status update warning:", sErr);

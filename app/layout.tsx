@@ -156,14 +156,14 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${instrumentSans.variable} ${inter.variable} ${outfit.variable} ${notoSansDevanagari.variable} h-full antialiased sx-theme-light`}
       suppressHydrationWarning
     >
-      <head />
-      <Script
-        id="sx-theme-boot"
-        strategy="beforeInteractive"
-        dangerouslySetInnerHTML={{
-          __html: `(function(){try{var t=localStorage.getItem("sx-theme");if(t==="dark"){document.documentElement.classList.remove("sx-theme-light");document.documentElement.classList.add("sx-theme-dark");}}catch(e){}})();`,
-        }}
-      />
+      <head>
+        <script
+          id="sx-theme-boot"
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("sx-theme");if(t==="dark"){document.documentElement.classList.remove("sx-theme-light");document.documentElement.classList.add("sx-theme-dark");}}catch(e){}})();`,
+          }}
+        />
+      </head>
       <Script
         id="org-json-ld"
         type="application/ld+json"

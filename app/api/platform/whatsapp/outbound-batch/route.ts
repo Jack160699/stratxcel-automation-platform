@@ -13,14 +13,69 @@ const TEMPLATE_OUTREACH_ID = "1cb7ba67-661b-471c-b528-2ba116390222";
 const TEMPLATE_OUTREACH_NAME = "stratxcel_outreach_intro";
 const TEMPLATE_OUTREACH_LANG = "en";
 
-function isValidIndianMobile(phone?: string | null): boolean {
-  if (!phone) return false;
-  const digits = phone.replace(/\D/g, "");
-  const national = digits.startsWith("91") && digits.length === 12 ? digits.slice(2) : digits;
-  if (national.startsWith("771") || national.startsWith("788") || national.startsWith("11") || national.startsWith("22")) {
-    return false;
+export function classifyIndianDestination(phone?: string | null): {
+  isValid: boolean;
+  isMobile: boolean;
+  isLandline: boolean;
+  clean10: string;
+  e164: string;
+  reason?: string;
+} {
+  if (!phone) return { isValid: false, isMobile: false, isLandline: false, clean10: "", e164: "", reason: "missing_phone" };
+  const rawDigits = phone.replace(/\D/g, "");
+  let clean10 = rawDigits;
+  if (clean10.startsWith("91") && clean10.length === 12) {
+    clean10 = clean10.slice(2);
+  } else if (clean10.startsWith("0") && clean10.length === 11) {
+    clean10 = clean10.slice(1);
   }
-  return national.length === 10 && /^[6-9]/.test(national);
+
+  if (clean10.length !== 10) {
+    return { isValid: false, isMobile: false, isLandline: false, clean10, e164: "", reason: "length_not_10" };
+  }
+
+  // Check known fixed landline STD patterns
+  const landlinePrefixes = [
+    "802", "803", "804", "805", "806", "807", "808", // Bangalore wireline blocks
+    "824", // Mangalore (0824-2407890)
+    "821", // Mysore
+    "831", // Belgaum
+    "836", // Hubli-Dharwad
+    "771", // Raipur
+    "788", // Bhilai
+    "79",  // Ahmedabad
+    "11",  // Delhi
+    "22",  // Mumbai
+    "33",  // Kolkata
+    "44",  // Chennai
+    "40",  // Hyderabad
+    "20",  // Pune
+  ];
+
+  for (const pfx of landlinePrefixes) {
+    if (clean10.startsWith(pfx)) {
+      return {
+        isValid: true,
+        isMobile: false,
+        isLandline: true,
+        clean10,
+        e164: `+91${clean10}`,
+        reason: `fixed_landline_std_${pfx}`,
+      };
+    }
+  }
+
+  if (!/^[6-9]/.test(clean10)) {
+    return { isValid: false, isMobile: false, isLandline: true, clean10, e164: `+91${clean10}`, reason: "non_mobile_first_digit" };
+  }
+
+  return {
+    isValid: true,
+    isMobile: true,
+    isLandline: false,
+    clean10,
+    e164: `+91${clean10}`,
+  };
 }
 
 /**
@@ -28,11 +83,12 @@ function isValidIndianMobile(phone?: string | null): boolean {
  * Controlled live production outbound sales dispatcher:
  * 1. Takes tenantId and optional leadIds or batchSize (default 10).
  * 2. Selects qualified prospects with valid mobile phones.
- * 3. Enforces deduplication and cooldown.
- * 4. Records B2B legitimate interest consent.
- * 5. Dispatches personalized template outreach via Meta WhatsApp Cloud API.
- * 6. Captures real Meta provider message IDs (wamid...).
- * 7. Automatically creates whatsapp_messages and activates whatsapp_conversations.
+ * 3. Enforces phone-level deduplication and 7-day cooldown.
+ * 4. Categorizes landlines and activates email fallback when business email exists.
+ * 5. Records B2B legitimate interest consent.
+ * 6. Dispatches personalized template outreach via Meta WhatsApp Cloud API.
+ * 7. Captures real Meta provider message IDs (wamid...).
+ * 8. Distinguishes request acceptance (SENT) from delivery (DELIVERED).
  */
 export async function POST(request: Request) {
   const authHeader = request.headers.get("authorization");
@@ -63,14 +119,13 @@ export async function POST(request: Request) {
   // 1. Fetch candidate leads
   let query = supabase
     .from("crm_leads")
-    .select("id, tenant_id, contact_name, contact_phone, status, metadata")
+    .select("id, tenant_id, contact_name, contact_phone, contact_email, status, metadata")
     .eq("tenant_id", tenantId);
 
   if (leadIds && leadIds.length > 0) {
     query = query.in("id", leadIds);
   } else {
-    // Select high-intent qualified leads
-    query = query.in("status", ["QUALIFIED", "DISCOVERED"]).order("created_at", { ascending: false }).limit(batchSize * 3);
+    query = query.in("status", ["QUALIFIED", "DISCOVERED"]).order("created_at", { ascending: false }).limit(batchSize * 4);
   }
 
   const { data: candidates, error: fetchErr } = await query;
@@ -89,6 +144,7 @@ export async function POST(request: Request) {
   }> = [];
 
   let sentCount = 0;
+  const seenPhonesInBatch = new Set<string>();
 
   for (const lead of candidates) {
     if (sentCount >= batchSize) break;
@@ -97,26 +153,101 @@ export async function POST(request: Request) {
     const company = meta.company || lead.contact_name || "Business";
     const phone = lead.contact_phone || "";
 
-    // A. Validate destination is a valid mobile phone
-    if (!isValidIndianMobile(phone)) {
-      results.push({ leadId: lead.id, company, phone, status: "SKIPPED", error: "Invalid mobile format (landline or invalid digits)" });
+    // A. Classify phone number destination
+    const classified = classifyIndianDestination(phone);
+
+    // If it's a fixed landline wireline:
+    if (classified.isLandline) {
+      if (lead.contact_email) {
+        // Record email fallback eligibility
+        await supabase.from("crm_lead_events").insert({
+          lead_id: lead.id,
+          tenant_id: lead.tenant_id,
+          event_type: "EMAIL_FALLBACK_ELIGIBLE",
+          description: `Contact phone ${classified.clean10} is a fixed wireline landline. Activated email fallback to ${lead.contact_email}.`,
+          metadata: { contact_email: lead.contact_email, phone: classified.clean10, reason: classified.reason },
+        }).catch(() => {});
+
+        await supabase.from("crm_leads").update({
+          status: "OUTREACH_FAILED",
+          updated_at: new Date().toISOString(),
+          metadata: {
+            ...meta,
+            outreachFailureCategory: "NOT_A_WHATSAPP_USER",
+            outreachFailureReason: "Fixed wireline landline — redirected to email fallback",
+            emailFallbackQueued: true,
+          },
+        }).eq("id", lead.id).catch(() => {});
+
+        results.push({ leadId: lead.id, company, phone, status: "SKIPPED", error: "Fixed landline wireline (routed to email fallback)" });
+      } else {
+        await supabase.from("crm_leads").update({
+          status: "OUTREACH_FAILED",
+          updated_at: new Date().toISOString(),
+          metadata: {
+            ...meta,
+            outreachFailureCategory: "NOT_A_WHATSAPP_USER",
+            outreachFailureReason: "Fixed wireline landline without email",
+          },
+        }).eq("id", lead.id).catch(() => {});
+
+        results.push({ leadId: lead.id, company, phone, status: "SKIPPED", error: "Fixed landline wireline (no email available)" });
+      }
       continue;
     }
 
-    // B. Check cooldown & deduplication (no outbound within last 7 days)
-    const { data: recentMsgs } = await supabase
-      .from("whatsapp_messages")
-      .select("id, status, created_at")
-      .eq("lead_id", lead.id)
-      .eq("direction", "outbound")
-      .limit(1);
-
-    if (recentMsgs && recentMsgs.length > 0) {
-      results.push({ leadId: lead.id, company, phone, status: "SKIPPED", error: "Already contacted recently" });
+    if (!classified.isValid || !classified.isMobile) {
+      results.push({ leadId: lead.id, company, phone, status: "SKIPPED", error: `Invalid mobile format: ${classified.reason}` });
       continue;
     }
 
-    // C. Resolve offer & value proposition parameters
+    // B. Phone deduplication in current batch
+    if (seenPhonesInBatch.has(classified.clean10)) {
+      results.push({ leadId: lead.id, company, phone, status: "SKIPPED", error: "Duplicate phone destination in current batch" });
+      continue;
+    }
+
+    // C. Check cooldown & deduplication across all leads with this phone number (7-day cooldown)
+    const { data: matchingLeads } = await supabase
+      .from("crm_leads")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .ilike("contact_phone", `%${classified.clean10}%`);
+
+    const matchingLeadIds = (matchingLeads || []).map((l: any) => l.id);
+    if (matchingLeadIds.length > 0) {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: recentMsgs } = await supabase
+        .from("whatsapp_messages")
+        .select("id, status, created_at")
+        .in("lead_id", matchingLeadIds)
+        .eq("direction", "outbound")
+        .gte("created_at", sevenDaysAgo)
+        .limit(1);
+
+      if (recentMsgs && recentMsgs.length > 0) {
+        results.push({ leadId: lead.id, company, phone, status: "SKIPPED", error: "Phone was already contacted within 7-day cooldown" });
+        continue;
+      }
+
+      // Check active conversation
+      const { data: activeConvo } = await supabase
+        .from("whatsapp_conversations")
+        .select("id, automation_mode, last_message_at")
+        .in("lead_id", matchingLeadIds)
+        .not("last_message_at", "is", null)
+        .limit(1);
+
+      if (activeConvo && activeConvo.length > 0) {
+        results.push({ leadId: lead.id, company, phone, status: "SKIPPED", error: "Active conversation already exists for this phone" });
+        continue;
+      }
+    }
+
+    // Mark phone as seen for this batch
+    seenPhonesInBatch.add(classified.clean10);
+
+    // D. Resolve offer & value proposition parameters
     const offerKey = meta.recommendedOfferKey || "GOOGLE_BUSINESS_MAPS_GROWTH";
     const offer = STRATXCEL_CANONICAL_OFFERS.find((o) => o.key === offerKey) || STRATXCEL_CANONICAL_OFFERS[0];
     const priceInr = meta.startingPriceInr || offer.startingPriceInr;
@@ -136,7 +267,7 @@ export async function POST(request: Request) {
       continue;
     }
 
-    // D. Register B2B legitimate interest consent in contact_consent
+    // E. Register B2B legitimate interest consent in contact_consent
     await recordOptIn(supabase as any, {
       tenantId: lead.tenant_id,
       leadId: lead.id,
@@ -144,7 +275,7 @@ export async function POST(request: Request) {
       evidence: `Public commercial entity; diagnosed 17-dimension fit for ${offer.name}`,
     }).catch(() => {});
 
-    // E. Dispatch canonical outbound WhatsApp message
+    // F. Dispatch canonical outbound WhatsApp message
     const idempotencyKey = `outreach:${lead.id}:${Date.now()}`;
     const outcome = await sendOutboundWhatsAppMessage(supabase as any, {
       tenantId: lead.tenant_id,
@@ -181,17 +312,31 @@ export async function POST(request: Request) {
     } else {
       results.push({ leadId: lead.id, company, phone, status: "FAILED", error: outcome.reason });
 
-      // Record error in metadata
+      // Update lead to OUTREACH_FAILED
       await supabase
         .from("crm_leads")
         .update({
+          status: "OUTREACH_FAILED",
+          updated_at: new Date().toISOString(),
           metadata: {
             ...meta,
-            outreachError: outcome.reason,
+            outreachFailureCategory: "PROVIDER_REJECTION",
+            outreachFailureReason: outcome.reason,
             outreachFailedAt: new Date().toISOString(),
           },
         })
         .eq("id", lead.id);
+
+      // If email exists, evaluate email fallback
+      if (lead.contact_email) {
+        await supabase.from("crm_lead_events").insert({
+          lead_id: lead.id,
+          tenant_id: lead.tenant_id,
+          event_type: "EMAIL_FALLBACK_ELIGIBLE",
+          description: `WhatsApp send failed (${outcome.reason}). Activated email fallback to ${lead.contact_email}.`,
+          metadata: { contact_email: lead.contact_email, reason: outcome.reason },
+        }).catch(() => {});
+      }
     }
   }
 
