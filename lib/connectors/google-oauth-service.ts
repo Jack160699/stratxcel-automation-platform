@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { createDevEncryptedVault } from "@stratxcel/byok";
+import { CANONICAL_ORIGIN } from "@/lib/reporting/site";
 
 export const GOOGLE_SERVICE_KEYS = [
   "google_drive",
@@ -157,17 +158,20 @@ const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 export function resolveGoogleOAuthCredentials() {
   const clientId =
+    process.env.GOOGLE_OAUTH_CLIENT_ID ||
     process.env.GOOGLE_OWNER_BRAIN_CLIENT_ID ||
     process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID ||
     process.env.GOOGLE_DRIVE_CLIENT_ID ||
     process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
   const clientSecret =
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET ||
     process.env.GOOGLE_OWNER_BRAIN_CLIENT_SECRET ||
     process.env.GOOGLE_SEARCH_OAUTH_CLIENT_SECRET ||
     process.env.GOOGLE_DRIVE_CLIENT_SECRET;
 
   const stateSecret =
+    process.env.GOOGLE_OAUTH_STATE_SECRET ||
     process.env.OWNER_BRAIN_OAUTH_STATE_SECRET ||
     process.env.SEARCH_GOOGLE_OAUTH_STATE_SECRET ||
     process.env.DRIVE_OAUTH_STATE_SECRET ||
@@ -180,6 +184,41 @@ export function resolveGoogleOAuthCredentials() {
     stateSecret,
     isConfigured: Boolean(clientId && clientSecret),
   };
+}
+
+/**
+ * Single source of truth for the Google OAuth Redirect URI.
+ *
+ * Guaranteed exact match with registered Google Cloud Console OAuth 2.0 Clients:
+ * 1. Explicit override via GOOGLE_OAUTH_REDIRECT_URI environment variable (if set).
+ * 2. Localhost development origin when invoked from localhost.
+ * 3. Canonical production URI:
+ *    - For GOOGLE_SEARCH_OAUTH_CLIENT_ID: https://www.stratxcel.in/api/platform/search/google/callback
+ *    - For GOOGLE_OWNER_BRAIN_CLIENT_ID: https://www.stratxcel.in/api/admin/operating-brain/connectors/google/callback
+ */
+export function resolveGoogleOAuthRedirectUri(requestOrigin?: string | null): string {
+  if (process.env.GOOGLE_OAUTH_REDIRECT_URI) {
+    return process.env.GOOGLE_OAUTH_REDIRECT_URI;
+  }
+
+  if (
+    requestOrigin &&
+    (requestOrigin.includes("localhost") || requestOrigin.includes("127.0.0.1"))
+  ) {
+    const cleanOrigin = requestOrigin.replace(/\/+$/, "");
+    return `${cleanOrigin}/api/admin/operating-brain/connectors/google/callback`;
+  }
+
+  const { clientId } = resolveGoogleOAuthCredentials();
+  if (
+    clientId &&
+    process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID &&
+    clientId === process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID
+  ) {
+    return `${CANONICAL_ORIGIN}/api/platform/search/google/callback`;
+  }
+
+  return `${CANONICAL_ORIGIN}/api/admin/operating-brain/connectors/google/callback`;
 }
 
 export function generateGoogleOAuthState(input: {

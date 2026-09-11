@@ -79,6 +79,18 @@ export default function ConnectorsPage() {
 
   useEffect(() => {
     void loadStatus();
+
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get("connected") === "google") {
+        setToast({ message: "Google account connected successfully! Authorized capabilities active.", type: "success" });
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (sp.get("error")) {
+        const errDesc = sp.get("error_description") || sp.get("error");
+        setToast({ message: `Google authorization: ${errDesc}`, type: "error" });
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
   }, [loadStatus]);
 
   function handleConnectGoogle() {

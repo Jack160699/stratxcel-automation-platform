@@ -2,18 +2,26 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createDevEncryptedVault } from "@stratxcel/byok";
 import { requireOperatingBrainApiAccess } from "@/lib/release/operating-brain-api";
 import { getServiceContext } from "@/lib/owner-brain/db-context";
+import { getTenantServiceContext } from "@/lib/tenants/tenant-context";
 import { verifyOwnerBrainOAuthState } from "@/lib/owner-brain/connectors/oauth-state";
 import { exchangeGoogleCode, safeGoogleOAuthError, scopeForGoogleSource } from "@/lib/owner-brain/connectors/google-oauth";
+import {
+  verifyGoogleOAuthState,
+  exchangeGoogleAuthorizationCode,
+  persistGoogleTokens,
+  resolveGoogleOAuthRedirectUri,
+} from "@/lib/connectors/google-oauth-service";
 import { getSourceByKey, upsertConnection, updateSourceStatus } from "@/lib/owner-brain/repositories/sources";
 import type { SourceKey } from "@/lib/owner-brain/types";
 
 /**
  * GET /api/admin/operating-brain/connectors/google/callback
- * Verifies the signed state (CSRF + expiry + ownerId match against the
- * live session — not just the state payload), exchanges the code, vaults
- * the refresh token (never stored in a plain table), and marks the
- * connection CONNECTED. Any failure marks it ERROR with a human-readable
- * reason rather than leaving it silently stuck.
+ * Handles Google OAuth callback for both:
+ * 1. The Unified Google Connector Hub (/admin/connectors)
+ * 2. The Operating Brain personal sources (/admin/operating-brain)
+ *
+ * Verifies signed state, exchanges code for tokens, vaults refresh token,
+ * persists connection and capabilities, and redirects cleanly.
  */
 export async function GET(request: NextRequest) {
   const url = request.nextUrl;
@@ -32,6 +40,48 @@ export async function GET(request: NextRequest) {
     return redirectToAdmin({ connect_error: "google", reason: googleError ? "invalid_state" : "missing_state" });
   }
 
+  // 1. Check if this is the Unified Google Connector Hub flow (/admin/connectors)
+  const unifiedVerified = verifyGoogleOAuthState(state);
+  if (unifiedVerified.ok) {
+    const returnTarget = new URL(unifiedVerified.redirectTo, request.url);
+
+    if (googleError) {
+      const safeError = safeGoogleOAuthError(googleError, googleErrorDescription);
+      returnTarget.searchParams.set("error", safeError.code);
+      returnTarget.searchParams.set("error_description", safeError.message);
+      return NextResponse.redirect(returnTarget);
+    }
+
+    if (!code) {
+      returnTarget.searchParams.set("error", "missing_code");
+      returnTarget.searchParams.set("error_description", "Google did not return an authorization code");
+      return NextResponse.redirect(returnTarget);
+    }
+
+    const redirectUri = resolveGoogleOAuthRedirectUri(url.origin);
+    try {
+      const tokens = await exchangeGoogleAuthorizationCode(code, redirectUri);
+      const { supabase } = getTenantServiceContext();
+
+      await persistGoogleTokens(supabase, {
+        tenantId: unifiedVerified.tenantId,
+        userId: unifiedVerified.userId,
+        tokens,
+      });
+
+      returnTarget.searchParams.set("connected", "google");
+      returnTarget.searchParams.set("status", "success");
+      return NextResponse.redirect(returnTarget);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Token exchange failed";
+      console.error("[google-oauth] Unified callback token exchange error:", message);
+      returnTarget.searchParams.set("error", "token_exchange_failed");
+      returnTarget.searchParams.set("error_description", message);
+      return NextResponse.redirect(returnTarget);
+    }
+  }
+
+  // 2. Legacy Operating Brain personal source flow
   const verified = verifyOwnerBrainOAuthState(state);
   if (!verified.ok) return redirectToAdmin({ connect_error: "google", reason: `invalid_state_${verified.reason}` });
 

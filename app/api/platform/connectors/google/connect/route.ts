@@ -5,6 +5,7 @@ import {
   generateGoogleOAuthState,
   buildGoogleAuthorizeUrl,
   resolveGoogleOAuthCredentials,
+  resolveGoogleOAuthRedirectUri,
   type GoogleServiceKey,
 } from "@/lib/connectors/google-oauth-service";
 
@@ -54,8 +55,7 @@ export async function GET(request: Request) {
     requestedServices,
   });
 
-  const origin = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || CANONICAL_ORIGIN || url.origin;
-  const redirectUri = new URL("/api/platform/connectors/google/callback", origin).toString();
+  const redirectUri = resolveGoogleOAuthRedirectUri(url.origin);
 
   let authorizeUrl: string;
   try {

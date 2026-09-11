@@ -4,6 +4,7 @@ import {
   verifyGoogleOAuthState,
   exchangeGoogleAuthorizationCode,
   persistGoogleTokens,
+  resolveGoogleOAuthRedirectUri,
 } from "@/lib/connectors/google-oauth-service";
 
 export const runtime = "nodejs";
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
   const googleError = url.searchParams.get("error");
   const googleErrorDesc = url.searchParams.get("error_description");
 
-  const origin = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || CANONICAL_ORIGIN || url.origin;
+  const origin = CANONICAL_ORIGIN;
 
   const redirectTarget = (path: string, params: Record<string, string>) => {
     const target = new URL(path, origin);
@@ -60,7 +61,7 @@ export async function GET(request: Request) {
     });
   }
 
-  const redirectUri = new URL("/api/platform/connectors/google/callback", origin).toString();
+  const redirectUri = resolveGoogleOAuthRedirectUri(url.origin);
 
   try {
     const tokens = await exchangeGoogleAuthorizationCode(code, redirectUri);
