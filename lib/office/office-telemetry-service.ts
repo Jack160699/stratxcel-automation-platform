@@ -398,7 +398,7 @@ export async function fetchOfficeTelemetry(
   });
 
   // 2. SEO SPECIALIST
-  const seoMission = findMissionForAgent(["seo", "backlink", "keyword", "serp", "audit"], ["seo.audit", "seo.launch", "seo.report"]);
+  const seoMission = findMissionForAgent(["seo", "backlink", "keyword", "serp", "audit", "revenue"], ["seo.audit", "seo.launch", "seo.report", "autonomous_revenue"]);
   const seoState = deriveAgentState(seoMission, missionWorkerHb);
   workers.push({
     id: "seo-specialist",
@@ -545,7 +545,7 @@ export async function fetchOfficeTelemetry(
   });
 
   // 6. RESEARCH & INTELLIGENCE SPECIALIST
-  const researchMission = findMissionForAgent(["research", "competitor", "market", "intelligence", "analysis"], ["research.market", "research.competitor", "research.web"]);
+  const researchMission = findMissionForAgent(["research", "competitor", "market", "intelligence", "analysis", "revenue"], ["research.market", "research.competitor", "research.web", "autonomous_revenue"]);
   const researchState = deriveAgentState(researchMission, missionWorkerHb);
   workers.push({
     id: "research-analyst",
@@ -583,7 +583,7 @@ export async function fetchOfficeTelemetry(
   // 7. SALES & WHATSAPP SPECIALIST
   const salesMission = findMissionForAgent(
     ["whatsapp", "lead", "sales", "crm", "customer", "message", "revenue", "solar", "linkup", "admission"],
-    ["whatsapp.inbound", "lead.convert", "crm.lead_discovery", "revenue.mission", "hermes.ceo_objective"]
+    ["whatsapp.inbound", "lead.convert", "crm.lead_discovery", "revenue.mission", "hermes.ceo_objective", "autonomous_revenue"]
   );
   const salesState = deriveAgentState(salesMission, whatsappWorkerHb);
   workers.push({

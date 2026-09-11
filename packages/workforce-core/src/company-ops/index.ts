@@ -10,3 +10,4 @@ export * from "./views/customer-contract.ts";
 export * from "./views/admin-contract.ts";
 export * from "./offboarding/workflow.ts";
 export * from "./observability/reconstruction.ts";
+export * from "./standing-objective-service.ts";

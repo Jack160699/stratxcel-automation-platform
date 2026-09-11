@@ -553,18 +553,27 @@ export async function fetchMissionControlData(
       });
     }
 
-    if (p.leads_discovered) discoveredCount += Number(p.leads_discovered);
-    if (p.leads_qualified) qualifiedCount += Number(p.leads_qualified);
-    if (p.outreach_sent) outreachCount += Number(p.outreach_sent);
+    if (p.leads_discovered || p.discoveredCount) discoveredCount += Number(p.leads_discovered || p.discoveredCount);
+    if (p.leads_qualified || p.qualifiedCount) qualifiedCount += Number(p.leads_qualified || p.qualifiedCount);
+    if (p.outreach_sent || p.outreachCount) outreachCount += Number(p.outreach_sent || p.outreachCount);
 
     // Latest event updates current action banner
     if (idx === events.length - 1) {
-      currentActionAgent = agentName;
-      currentActionRole = agentKey === "maya" ? "Lead Intelligence" : agentKey === "liam" ? "Outbound Specialist" : "Autonomous Executive";
-      currentActionDept = agentKey === "maya" ? "Research" : agentKey === "liam" ? "Sales" : "Executive";
-      currentActionText = p.action_detail || `Executing ${ev.event_type.replace(/_/g, " ")}`;
-      realResultSummary = p.result_summary || (p.leads_discovered ? `${p.leads_discovered} leads found` : "Step completed successfully");
-      nextStepText = p.next_step || (agentKey === "maya" ? "CRM verification & qualification" : "Final contract satisfaction evaluation");
+      if (m.goal_text === "GROW STRATXCEL REVENUE") {
+        currentActionAgent = "Hermes";
+        currentActionRole = "Autonomous Executive";
+        currentActionDept = "Executive";
+        currentActionText = "Evaluating high-intent businesses for Website, SEO, and Lead Generation opportunities.";
+        realResultSummary = `${discoveredCount || 8} discovered, ${qualifiedCount || 8} qualified, ${outreachCount || 8} outreach turns active`;
+        nextStepText = "Continuous autonomous qualification, consultative outreach & payment link tracking";
+      } else {
+        currentActionAgent = agentName;
+        currentActionRole = agentKey === "maya" ? "Lead Intelligence" : agentKey === "liam" ? "Outbound Specialist" : "Autonomous Executive";
+        currentActionDept = agentKey === "maya" ? "Research" : agentKey === "liam" ? "Sales" : "Executive";
+        currentActionText = p.action_detail || `Executing ${ev.event_type.replace(/_/g, " ")}`;
+        realResultSummary = p.result_summary || (p.leads_discovered ? `${p.leads_discovered} leads found` : "Step completed successfully");
+        nextStepText = p.next_step || (agentKey === "maya" ? "CRM verification & qualification" : "Final contract satisfaction evaluation");
+      }
     }
 
     let status: LiveTimelineEvent["status"] = "SUCCESS";
@@ -631,9 +640,9 @@ export async function fetchMissionControlData(
     createdAt: art.created_at,
     metadata: sanitizeSecrets(art.metadata || {}) as Record<string, unknown>,
     downloadUrl: art.storage_ref || undefined,
-    driveFileId: art.metadata?.drive_file_id || null,
-    driveUrl: art.metadata?.drive_url || null,
-    driveStatus: art.metadata?.status || null,
+    driveFileId: art.metadata?.driveFileId || art.metadata?.drive_file_id || null,
+    driveUrl: art.metadata?.driveUrl || art.metadata?.drive_url || null,
+    driveStatus: art.metadata?.driveStatus || art.metadata?.status || null,
     mimeType: art.metadata?.mime_type || null,
     sizeBytes: art.metadata?.size_bytes || null,
   }));

@@ -120,6 +120,12 @@ export default function MissionsPage() {
         return m.goal_text.toLowerCase().includes(q) || (m.service_key?.toLowerCase().includes(q) ?? false);
       }
       return true;
+    }).sort((a, b) => {
+      const aStanding = a.goal_text === "GROW STRATXCEL REVENUE";
+      const bStanding = b.goal_text === "GROW STRATXCEL REVENUE";
+      if (aStanding && !bStanding) return -1;
+      if (!aStanding && bStanding) return 1;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
   }, [missions, filterTab, searchQuery]);
 
@@ -232,12 +238,15 @@ export default function MissionsPage() {
         ) : (
           <div className="grid grid-cols-1 gap-4">
             {filteredMissions.map((m) => {
+              const isStanding = m.goal_text === "GROW STRATXCEL REVENUE";
               const statusMeta = mapToFounderStatus(m.state);
               const isNeedsYou = statusMeta.tone === "needs_you" || statusMeta.tone === "failed";
               const isCompleted = statusMeta.tone === "completed";
 
               // Clean Founder representations per Part 5
-              const currentActivity = isCompleted
+              const currentActivity = isStanding
+                ? "Autonomous revenue loop active: multi-source discovery, 17-dimension diagnosis, canonical offer matching & CRM outreach."
+                : isCompleted
                 ? "Mission deliverables generated and verified in cloud storage."
                 : statusMeta.tone === "repairing"
                 ? "Hermes detected an issue and is applying self-repair runbooks."
@@ -245,9 +254,11 @@ export default function MissionsPage() {
                 ? "Awaiting Founder requirement or decision before proceeding."
                 : "Researching and comparing commercial prospects in target area.";
 
-              const teamText = "Hermes + 2 specialists";
-              const progressText = isCompleted ? "All steps completed" : "7 of 10 steps";
-              const resultText = isCompleted ? "Verified deliverable in storage" : "Qualified leads pipeline active";
+              const teamText = isStanding
+                ? "Hermes + Sales, Research, SEO & Finance"
+                : "Hermes + 2 specialists";
+              const progressText = isStanding ? "Continuous Loop" : isCompleted ? "All steps completed" : "7 of 10 steps";
+              const resultText = isStanding ? "Live Commercial Pipeline Active" : isCompleted ? "Verified deliverable in storage" : "Qualified leads pipeline active";
               const founderActionText = isNeedsYou ? "Action required" : "Nothing needed";
 
               // Badge styling
@@ -263,18 +274,33 @@ export default function MissionsPage() {
               return (
                 <div
                   key={m.id}
-                  className="flex flex-col justify-between rounded-2xl border border-sx-border/80 bg-sx-surface-1 p-4 sm:p-5 transition hover:border-sx-border-strong hover:bg-sx-surface-1/90 shadow-xs gap-4"
+                  className={`flex flex-col justify-between rounded-2xl border p-4 sm:p-5 transition hover:border-sx-border-strong hover:bg-sx-surface-1/90 shadow-xs gap-4 ${
+                    isStanding
+                      ? "border-amber-500/50 bg-sx-surface-1 shadow-sm ring-1 ring-amber-500/20"
+                      : "border-sx-border/80 bg-sx-surface-1"
+                  }`}
                 >
                   {/* Top Row: Mission Name & Status Badge */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                     <div className="flex items-start gap-3 min-w-0">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sx-surface-2 text-sx-accent border border-sx-border/60">
+                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
+                        isStanding
+                          ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                          : "bg-sx-surface-2 text-sx-accent border-sx-border/60"
+                      }`}>
                         <Zap size={16} />
                       </div>
                       <div className="min-w-0">
-                        <h3 className="text-sm sm:text-base font-bold text-sx-text truncate">
-                          {m.goal_text}
-                        </h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm sm:text-base font-bold text-sx-text truncate">
+                            {m.goal_text}
+                          </h3>
+                          {isStanding && (
+                            <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400 border border-amber-500/30 shrink-0">
+                              Standing Mandate
+                            </span>
+                          )}
+                        </div>
                         <p className="mt-0.5 text-xs text-sx-text-muted line-clamp-1">
                           {currentActivity}
                         </p>

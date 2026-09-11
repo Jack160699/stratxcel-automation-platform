@@ -50,7 +50,11 @@ import {
   processEmailOutboxBatch,
   resolveTenantOwnerEmailForNotify,
 } from "@stratxcel/email-runtime";
-import { ContinuousRevenueEngine } from "../../../packages/workforce-core/src/index.ts";
+import {
+  ContinuousRevenueEngine,
+  StandingObjectiveService,
+  CANONICAL_TENANT_ID,
+} from "../../../packages/workforce-core/src/index.ts";
 
 /**
  * Standalone async mission executor — separated from the Next.js dashboard
@@ -513,13 +517,20 @@ if (process.env.NODE_ENV !== "test") {
   }, EMAIL_POLL_INTERVAL_MS);
 
   // Standing continuous autonomous revenue loop — runs recurring cycles to discover, qualify, and advance revenue.
-  const revenueEngine = new ContinuousRevenueEngine(supabase);
-  setInterval(() => {
+  const standingService = new StandingObjectiveService(supabase, CANONICAL_TENANT_ID);
+  standingService.ensureStandingObjective().then((m) => {
+    console.log(`[mission-worker] standing objective active: ${m.goal_text} (${m.id}, state: ${m.state})`);
+  }).catch((err) => {
+    console.error("[mission-worker] failed to ensure standing objective:", err);
+  });
+
+  const revenueEngine = new ContinuousRevenueEngine(supabase, CANONICAL_TENANT_ID);
+  const runCycle = () => {
     revenueEngine
       .runAutonomousCycle({
-        tenantId: "466e6195-a9f6-4576-8271-29fdae61c18a",
+        tenantId: CANONICAL_TENANT_ID,
         supabaseClient: supabase,
-        maxLeadsPerCycle: 5,
+        maxLeadsPerCycle: 10,
       })
       .then((res) => {
         recordWorkerHeartbeat(supabase, {
@@ -540,6 +551,10 @@ if (process.env.NODE_ENV !== "test") {
           lastError: { message: err instanceof Error ? err.message : String(err) },
         }).catch(() => {});
       });
-  }, REVENUE_CYCLE_INTERVAL_MS);
+  };
+
+  // Run initial cycle shortly after startup, then on regular interval
+  setTimeout(runCycle, 2000);
+  setInterval(runCycle, REVENUE_CYCLE_INTERVAL_MS);
 }
 
