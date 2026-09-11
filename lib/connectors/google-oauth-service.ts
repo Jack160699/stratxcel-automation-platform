@@ -626,5 +626,43 @@ export async function persistGoogleTokens(
     console.warn("[google-oauth] search_google_connections upsert notice:", sErr.message);
   }
 
+  // 3. Bridge into storage_connections so @stratxcel/storage Drive adapter can resolve tokens.
+  //    The Drive adapter's getAccessToken() queries storage_connections — without this upsert,
+  //    it always throws StorageNotConnectedError even when Google OAuth is fully connected.
+  const driveScopes = grantedScopes.filter(
+    (s) =>
+      s.includes("drive") ||
+      s.includes("docs") ||
+      s.includes("sheets") ||
+      s.includes("spreadsheets")
+  );
+
+  if (driveScopes.length > 0 && encryptedRef) {
+    const storagePayload: Record<string, unknown> = {
+      tenant_id: input.tenantId,
+      provider: "google_drive",
+      status: "connected",
+      account_email: null,
+      encrypted_token_ref: encryptedRef,
+      scopes: driveScopes,
+      root_folder_id: null,
+      last_error: null,
+      connected_at: now,
+      updated_at: now,
+    };
+
+    const { error: stErr } = await supabase
+      .from("storage_connections")
+      .upsert(storagePayload, { onConflict: "tenant_id,provider" });
+
+    if (stErr) {
+      console.warn("[google-oauth] storage_connections upsert notice:", stErr.message);
+    } else {
+      console.log(
+        `[google-oauth] Bridged ${driveScopes.length} Drive scope(s) into storage_connections for tenant ${input.tenantId}`
+      );
+    }
+  }
+
   return { success: true, grantedScopes };
 }

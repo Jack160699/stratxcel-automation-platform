@@ -18,9 +18,18 @@ export interface TokenRefreshAdapter {
  */
 export function createGoogleTokenRefreshAdapter(): TokenRefreshAdapter {
   function getCredentials() {
-    const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET;
-    if (!clientId || !clientSecret) throw new Error("GOOGLE_DRIVE_CLIENT_ID/GOOGLE_DRIVE_CLIENT_SECRET are not set");
+    const clientId =
+      process.env.GOOGLE_DRIVE_CLIENT_ID ||
+      process.env.GOOGLE_OWNER_BRAIN_CLIENT_ID ||
+      process.env.GOOGLE_SEARCH_OAUTH_CLIENT_ID ||
+      process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    const clientSecret =
+      process.env.GOOGLE_DRIVE_CLIENT_SECRET ||
+      process.env.GOOGLE_OWNER_BRAIN_CLIENT_SECRET ||
+      process.env.GOOGLE_SEARCH_OAUTH_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      throw new Error("GOOGLE_DRIVE_CLIENT_ID/GOOGLE_DRIVE_CLIENT_SECRET (or GOOGLE_OWNER_BRAIN_*) are not set");
+    }
     return { clientId, clientSecret };
   }
 

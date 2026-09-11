@@ -98,6 +98,11 @@ export interface MissionArtifactItem {
   createdAt: string;
   metadata: Record<string, unknown>;
   downloadUrl?: string;
+  driveFileId?: string | null;
+  driveUrl?: string | null;
+  driveStatus?: "VERIFIED" | "PENDING_DRIVE_SYNC" | "FILE_MISSING" | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
 }
 
 export interface BusinessOutputsSummary {
@@ -619,13 +624,18 @@ export async function fetchMissionControlData(
   const formattedArtifacts: MissionArtifactItem[] = artifacts.map((art: any) => ({
     id: art.id,
     kind: art.kind || "dataset",
-    label: art.metadata?.label || `${art.kind || "Artifact"} - ${art.id.slice(0, 6)}`,
+    label: art.metadata?.name || art.metadata?.label || `${art.kind || "Artifact"} - ${art.id.slice(0, 6)}`,
     storageRef: art.storage_ref || art.storage_path || "/artifacts/mission-output",
     creator: art.metadata?.creator || "Maya",
     version: art.metadata?.version || 1,
     createdAt: art.created_at,
     metadata: sanitizeSecrets(art.metadata || {}) as Record<string, unknown>,
     downloadUrl: art.storage_ref || undefined,
+    driveFileId: art.metadata?.drive_file_id || null,
+    driveUrl: art.metadata?.drive_url || null,
+    driveStatus: art.metadata?.status || null,
+    mimeType: art.metadata?.mime_type || null,
+    sizeBytes: art.metadata?.size_bytes || null,
   }));
 
   // Check Google Drive status

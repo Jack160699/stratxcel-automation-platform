@@ -535,18 +535,31 @@ export default function MissionDetailPage({
                         isMissing ? "text-rose-400" : "text-emerald-400"
                       }`}
                     >
-                      {isMissing ? "Hermes Repairing" : "Verified in Drive"}
+                      {isMissing ? "Hermes Repairing" : art.driveFileId ? "Verified in Drive" : "Internal"}
                     </span>
 
-                    <a
-                      href={`/api/platform/missions/artifacts/${art.id}/open`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-lg bg-sx-surface-1 border border-sx-border/80 px-3 py-1 text-xs font-semibold text-sx-text hover:bg-sx-accent hover:text-sx-accent-on transition shadow-xs"
-                    >
-                      <span>Open</span>
-                      <ExternalLink size={12} />
-                    </a>
+                    <div className="flex items-center gap-2">
+                      {art.driveUrl && (
+                        <a
+                          href={art.driveUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 transition shadow-xs"
+                        >
+                          <span>Drive</span>
+                          <ExternalLink size={12} />
+                        </a>
+                      )}
+                      <a
+                        href={`/api/platform/missions/artifacts/${art.id}/open`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 rounded-lg bg-sx-surface-1 border border-sx-border/80 px-3 py-1 text-xs font-semibold text-sx-text hover:bg-sx-accent hover:text-sx-accent-on transition shadow-xs"
+                      >
+                        <span>Open</span>
+                        <ExternalLink size={12} />
+                      </a>
+                    </div>
                   </div>
                 </div>
               );

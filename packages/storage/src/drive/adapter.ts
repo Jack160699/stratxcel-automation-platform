@@ -2,6 +2,7 @@ import { createDevEncryptedVault } from "@stratxcel/byok";
 import type { ServiceClient } from "../db.ts";
 import { getConnection, recordFileReference, deleteFileReference as deleteFileReferenceRow, listFileReferences } from "../repository.ts";
 import { getFolderLabel } from "../folder-structure.ts";
+import { createGoogleTokenRefreshAdapter } from "./token-refresh.ts";
 import {
   StorageNotConnectedError,
   StoragePermissionLostError,
@@ -23,7 +24,19 @@ async function getAccessToken(supabase: ServiceClient, tenantId: string): Promis
   const vault = createDevEncryptedVault(supabase);
   const token = await vault.retrieve(connection.encrypted_token_ref);
   if (!token) throw new StoragePermissionLostError("google_drive");
-  return token;
+
+  // Attempt to exchange refresh token for a fresh access token
+  try {
+    const refreshAdapter = createGoogleTokenRefreshAdapter();
+    const refreshed = await refreshAdapter.refreshAccessToken(token);
+    return refreshed.accessToken;
+  } catch {
+    // Fall back to token directly if it is not a standard refresh token
+    if (!token.startsWith("1//")) {
+      return token;
+    }
+    throw new StoragePermissionLostError("google_drive");
+  }
 }
 
 function classifyDriveError(status: number, provider: string): never {
