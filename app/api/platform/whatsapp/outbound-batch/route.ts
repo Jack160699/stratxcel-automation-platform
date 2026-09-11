@@ -166,7 +166,7 @@ export async function POST(request: Request) {
           event_type: "EMAIL_FALLBACK_ELIGIBLE",
           description: `Contact phone ${classified.clean10} is a fixed wireline landline. Activated email fallback to ${lead.contact_email}.`,
           metadata: { contact_email: lead.contact_email, phone: classified.clean10, reason: classified.reason },
-        }).catch(() => {});
+        });
 
         await supabase.from("crm_leads").update({
           status: "OUTREACH_FAILED",
@@ -177,7 +177,7 @@ export async function POST(request: Request) {
             outreachFailureReason: "Fixed wireline landline — redirected to email fallback",
             emailFallbackQueued: true,
           },
-        }).eq("id", lead.id).catch(() => {});
+        }).eq("id", lead.id);
 
         results.push({ leadId: lead.id, company, phone, status: "SKIPPED", error: "Fixed landline wireline (routed to email fallback)" });
       } else {
@@ -189,7 +189,7 @@ export async function POST(request: Request) {
             outreachFailureCategory: "NOT_A_WHATSAPP_USER",
             outreachFailureReason: "Fixed wireline landline without email",
           },
-        }).eq("id", lead.id).catch(() => {});
+        }).eq("id", lead.id);
 
         results.push({ leadId: lead.id, company, phone, status: "SKIPPED", error: "Fixed landline wireline (no email available)" });
       }
@@ -335,7 +335,7 @@ export async function POST(request: Request) {
           event_type: "EMAIL_FALLBACK_ELIGIBLE",
           description: `WhatsApp send failed (${outcome.reason}). Activated email fallback to ${lead.contact_email}.`,
           metadata: { contact_email: lead.contact_email, reason: outcome.reason },
-        }).catch(() => {});
+        });
       }
     }
   }

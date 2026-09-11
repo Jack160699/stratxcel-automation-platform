@@ -533,7 +533,7 @@ export class ContinuousRevenueEngine {
                 event_type: "EMAIL_FALLBACK_ELIGIBLE",
                 description: `Fixed landline wireline detected (${item.lead.contactPhone}). Activated email fallback to ${item.lead.contactEmail}.`,
                 metadata: { contact_email: item.lead.contactEmail, reason: "FIXED_LANDLINE" },
-              }).catch(() => {});
+              });
             }
             continue;
           }
@@ -616,7 +616,7 @@ export class ContinuousRevenueEngine {
                     event_type: "EMAIL_FALLBACK_ELIGIBLE",
                     description: `WhatsApp send failed (${outcome.reason}). Activated email fallback to ${item.lead.contactEmail}.`,
                     metadata: { contact_email: item.lead.contactEmail, reason: outcome.reason },
-                  }).catch(() => {});
+                  });
                 }
               }
             } catch (waErr: any) {
