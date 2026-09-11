@@ -308,9 +308,21 @@ export function buildGoogleAuthorizeUrl(input: {
     "https://www.googleapis.com/auth/userinfo.profile",
   ];
 
-  const serviceKeys = input.requestedServices && input.requestedServices.length > 0
+  // Google OAuth restriction: YouTube scopes (upload, readonly) CANNOT be requested together with Google Drive/Workspace scopes
+  // in a single authorization request. If requested together, Google fails with:
+  // "This request contains scopes that cannot be requested together: [drive.file, youtube.readonly, youtube.upload]"
+  const defaultServices = (Object.keys(GOOGLE_SERVICE_DEFINITIONS) as GoogleServiceKey[]).filter(
+    (k) => k !== "youtube"
+  );
+
+  let serviceKeys = input.requestedServices && input.requestedServices.length > 0
     ? input.requestedServices
-    : (Object.keys(GOOGLE_SERVICE_DEFINITIONS) as GoogleServiceKey[]);
+    : defaultServices;
+
+  if (serviceKeys.includes("google_drive") && serviceKeys.includes("youtube")) {
+    serviceKeys = serviceKeys.filter((k) => k !== "youtube");
+  }
+
 
   const additionalScopes = new Set<string>();
   for (const key of serviceKeys) {
