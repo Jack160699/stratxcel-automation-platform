@@ -158,25 +158,29 @@ export async function POST(req: NextRequest) {
                 })
                 .eq("id", lead.id);
 
-              await service.from("crm_lead_events").insert({
-                lead_id: lead.id,
+              // Log to immutable audit_events
+              await service.from("audit_events").insert({
                 tenant_id: binding.tenant_id,
-                event_type: "OUTREACH_FAILED",
-                description: `WhatsApp delivery failed: ${primaryError?.title || "Undeliverable"} (${primaryError?.code || 131026}). Category: ${failureCategory}`,
+                actor_kind: "integration",
+                action: "whatsapp.delivery_failed",
+                target_type: "crm_lead",
+                target_id: lead.id,
                 metadata: {
                   code: primaryError?.code || 131026,
                   category: failureCategory,
+                  reason: primaryError?.message || primaryError?.title || "Message undeliverable",
                   providerMessageId: update.providerMessageId,
                 },
               });
 
               // Check for Email Fallback
               if (lead.contact_email && !currentMeta.emailFallbackSent) {
-                await service.from("crm_lead_events").insert({
-                  lead_id: lead.id,
+                await service.from("audit_events").insert({
                   tenant_id: binding.tenant_id,
-                  event_type: "EMAIL_FALLBACK_ELIGIBLE",
-                  description: `WhatsApp undeliverable (${failureCategory}). Eligible for email outreach fallback to ${lead.contact_email}`,
+                  actor_kind: "system",
+                  action: "outreach.email_fallback_eligible",
+                  target_type: "crm_lead",
+                  target_id: lead.id,
                   metadata: {
                     contact_email: lead.contact_email,
                     reason: failureCategory,

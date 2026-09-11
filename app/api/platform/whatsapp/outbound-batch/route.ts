@@ -109,11 +109,13 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const { tenantId = "466e6195-a9f6-4576-8271-29fdae61c18a", leadIds, batchSize = 10, dryRun = false } = body as {
+  const { tenantId = "466e6195-a9f6-4576-8271-29fdae61c18a", leadIds, batchSize = 10, dryRun = false, bypassCooldown = false, force = false } = body as {
     tenantId?: string;
     leadIds?: string[];
     batchSize?: number;
     dryRun?: boolean;
+    bypassCooldown?: boolean;
+    force?: boolean;
   };
 
   // 1. Fetch candidate leads
@@ -159,12 +161,13 @@ export async function POST(request: Request) {
     // If it's a fixed landline wireline:
     if (classified.isLandline) {
       if (lead.contact_email) {
-        // Record email fallback eligibility
-        await supabase.from("crm_lead_events").insert({
-          lead_id: lead.id,
+        // Record email fallback eligibility in audit_events
+        await supabase.from("audit_events").insert({
           tenant_id: lead.tenant_id,
-          event_type: "EMAIL_FALLBACK_ELIGIBLE",
-          description: `Contact phone ${classified.clean10} is a fixed wireline landline. Activated email fallback to ${lead.contact_email}.`,
+          actor_kind: "system",
+          action: "outreach.email_fallback_eligible",
+          target_type: "crm_lead",
+          target_id: lead.id,
           metadata: { contact_email: lead.contact_email, phone: classified.clean10, reason: classified.reason },
         });
 
@@ -215,7 +218,7 @@ export async function POST(request: Request) {
       .ilike("contact_phone", `%${classified.clean10}%`);
 
     const matchingLeadIds = (matchingLeads || []).map((l: any) => l.id);
-    if (matchingLeadIds.length > 0) {
+    if (matchingLeadIds.length > 0 && !bypassCooldown && !force) {
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const { data: recentMsgs } = await supabase
         .from("whatsapp_messages")
@@ -329,11 +332,12 @@ export async function POST(request: Request) {
 
       // If email exists, evaluate email fallback
       if (lead.contact_email) {
-        await supabase.from("crm_lead_events").insert({
-          lead_id: lead.id,
+        await supabase.from("audit_events").insert({
           tenant_id: lead.tenant_id,
-          event_type: "EMAIL_FALLBACK_ELIGIBLE",
-          description: `WhatsApp send failed (${outcome.reason}). Activated email fallback to ${lead.contact_email}.`,
+          actor_kind: "system",
+          action: "outreach.email_fallback_eligible",
+          target_type: "crm_lead",
+          target_id: lead.id,
           metadata: { contact_email: lead.contact_email, reason: outcome.reason },
         });
       }

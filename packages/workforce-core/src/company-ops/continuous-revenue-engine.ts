@@ -394,19 +394,19 @@ export class ContinuousRevenueEngine {
 
             if (!insertErr && inserted) {
               leadId = inserted.id;
-              // Log immutable CRM lead lifecycle event
-              await this.supabase.from("crm_lead_events").insert({
-                lead_id: leadId,
+              // Log immutable CRM lead lifecycle event in audit_events
+              await this.supabase.from("audit_events").insert({
                 tenant_id: tenantId,
-                event_type: "lead_discovered_and_diagnosed",
-                from_status: "DISCOVERED",
-                to_status: "QUALIFIED",
-                actor_agent: "Hermes Research Specialist",
-                payload: {
+                actor_kind: "agent",
+                action: "lead.discovered_and_diagnosed",
+                target_type: "crm_lead",
+                target_id: leadId,
+                metadata: {
                   company: lead.companyName,
                   offerKey: recommendedOffer.key,
                   score: item.qualificationScore,
                   cycleId,
+                  actorAgent: "Hermes Research Specialist",
                 },
               });
             } else {
@@ -527,12 +527,13 @@ export class ContinuousRevenueEngine {
               .eq("id", leadId);
 
             if (item.lead.contactEmail) {
-              await this.supabase.from("crm_lead_events").insert({
-                lead_id: leadId,
+              await this.supabase.from("audit_events").insert({
                 tenant_id: tenantId,
-                event_type: "EMAIL_FALLBACK_ELIGIBLE",
-                description: `Fixed landline wireline detected (${item.lead.contactPhone}). Activated email fallback to ${item.lead.contactEmail}.`,
-                metadata: { contact_email: item.lead.contactEmail, reason: "FIXED_LANDLINE" },
+                actor_kind: "system",
+                action: "outreach.email_fallback_eligible",
+                target_type: "crm_lead",
+                target_id: leadId,
+                metadata: { contact_email: item.lead.contactEmail, reason: "FIXED_LANDLINE", phone: item.lead.contactPhone },
               });
             }
             continue;
@@ -610,11 +611,12 @@ export class ContinuousRevenueEngine {
                   .eq("id", leadId);
 
                 if (item.lead.contactEmail) {
-                  await this.supabase.from("crm_lead_events").insert({
-                    lead_id: leadId,
+                  await this.supabase.from("audit_events").insert({
                     tenant_id: tenantId,
-                    event_type: "EMAIL_FALLBACK_ELIGIBLE",
-                    description: `WhatsApp send failed (${outcome.reason}). Activated email fallback to ${item.lead.contactEmail}.`,
+                    actor_kind: "system",
+                    action: "outreach.email_fallback_eligible",
+                    target_type: "crm_lead",
+                    target_id: leadId,
                     metadata: { contact_email: item.lead.contactEmail, reason: outcome.reason },
                   });
                 }
