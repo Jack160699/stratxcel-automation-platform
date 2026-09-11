@@ -4,6 +4,8 @@ import { sendOutboundWhatsAppMessage } from "@stratxcel/whatsapp";
 import { recordOptIn } from "../../../../../packages/whatsapp/src/consent.ts";
 import { STRATXCEL_CANONICAL_OFFERS } from "../../../../../packages/workforce-core/src/catalogue/stratxcel-business-brain.ts";
 
+import { createSupabaseServiceClient } from "@/lib/supabase/service";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -33,8 +35,22 @@ function isValidIndianMobile(phone?: string | null): boolean {
  * 7. Automatically creates whatsapp_messages and activates whatsapp_conversations.
  */
 export async function POST(request: Request) {
-  const ctx = await requireOwnerContext();
-  if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
+  const authHeader = request.headers.get("authorization");
+  const expectedKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  const isServiceAuth = authHeader && expectedKey && (
+    authHeader === `Bearer ${expectedKey}` ||
+    authHeader === `Bearer ${process.env.INTERNAL_SERVICE_KEY}` ||
+    authHeader === `Bearer ${process.env.CRON_SECRET}`
+  );
+
+  let supabase: any;
+  if (isServiceAuth) {
+    supabase = createSupabaseServiceClient();
+  } else {
+    const ctx = await requireOwnerContext();
+    if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
+    supabase = ctx.supabase;
+  }
 
   const body = await request.json().catch(() => ({}));
   const { tenantId = "466e6195-a9f6-4576-8271-29fdae61c18a", leadIds, batchSize = 10, dryRun = false } = body as {
@@ -43,8 +59,6 @@ export async function POST(request: Request) {
     batchSize?: number;
     dryRun?: boolean;
   };
-
-  const supabase = ctx.supabase;
 
   // 1. Fetch candidate leads
   let query = supabase

@@ -1,4 +1,5 @@
 import { requireOwnerContext } from "@/lib/social/db-context";
+import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { createGoogleDriveAdapter } from "@/packages/storage/src/drive/adapter";
 import { ContinuousLearningEngine } from "@/packages/workforce-core/src/learning/continuous-learning-engine";
 import { STANDING_OBJECTIVE_SERVICE_KEY } from "@/packages/workforce-core/src/company-ops/standing-objective-service";
@@ -17,10 +18,22 @@ export const dynamic = "force-dynamic";
  * 6. Updates persistent learning memory in `agent_memories`.
  */
 export async function POST(request: Request) {
-  const ctx = await requireOwnerContext();
-  if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
+  const authHeader = request.headers.get("authorization");
+  const expectedKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  const isServiceAuth = authHeader && expectedKey && (
+    authHeader === `Bearer ${expectedKey}` ||
+    authHeader === `Bearer ${process.env.INTERNAL_SERVICE_KEY}` ||
+    authHeader === `Bearer ${process.env.CRON_SECRET}`
+  );
 
-  const supabase = ctx.supabase;
+  let supabase: any;
+  if (isServiceAuth) {
+    supabase = createSupabaseServiceClient();
+  } else {
+    const ctx = await requireOwnerContext();
+    if (!ctx.ok) return Response.json({ error: ctx.error }, { status: ctx.status });
+    supabase = ctx.supabase;
+  }
   const tenantId = "466e6195-a9f6-4576-8271-29fdae61c18a";
   const todayIso = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
 
@@ -50,10 +63,10 @@ export async function POST(request: Request) {
     .eq("tenant_id", tenantId)
     .gte("created_at", `${todayIso}T00:00:00.000Z`);
 
-  const outboundMsgs = (messagesToday || []).filter((m) => m.direction === "outbound");
-  const inboundMsgs = (messagesToday || []).filter((m) => m.direction === "inbound");
-  const sentCount = outboundMsgs.filter((m) => ["sent", "delivered", "read"].includes(m.status)).length;
-  const deliveredCount = outboundMsgs.filter((m) => ["delivered", "read"].includes(m.status)).length;
+  const outboundMsgs = (messagesToday || []).filter((m: any) => m.direction === "outbound");
+  const inboundMsgs = (messagesToday || []).filter((m: any) => m.direction === "inbound");
+  const sentCount = outboundMsgs.filter((m: any) => ["sent", "delivered", "read"].includes(m.status)).length;
+  const deliveredCount = outboundMsgs.filter((m: any) => ["delivered", "read"].includes(m.status)).length;
   const repliesCount = inboundMsgs.length;
 
   // C. Active Conversations (message count > 0)
