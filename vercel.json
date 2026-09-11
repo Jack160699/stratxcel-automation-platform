@@ -39,6 +39,14 @@
     {
       "path": "/api/admin/system/local-ai/health-check",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/platform/revenue/daily-review",
+      "schedule": "30 17 * * *"
+    },
+    {
+      "path": "/api/platform/missions/standing-objective",
+      "schedule": "*/30 * * * *"
     }
   ]
 }

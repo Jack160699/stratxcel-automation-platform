@@ -44,7 +44,7 @@ export interface CrmConversation {
   updated_at: string;
 }
 
-export type MessageStatus = "queued" | "submitted" | "sent" | "delivered" | "read" | "failed";
+export type MessageStatus = "queued" | "sending" | "submitted" | "sent" | "delivered" | "read" | "failed" | "cancelled";
 export type MessageDirection = "inbound" | "outbound";
 
 export interface CrmMessage {
