@@ -1,5 +1,25 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 102 — revenue-loop restart attempt: AWS account genuinely not activated for EC2/SSM, not a wrong-account or permissions problem
+
+Following Update 101's diagnosis (mission-worker's heartbeats for every
+sub-loop stopped simultaneously ~2026-09-12 20:35 UTC), attempted a real
+fix via `scripts/ssm-tool.mjs` (instance `i-0067f6c0dfd60cc46`, region
+`ap-south-1`). The user completed a real interactive `aws login` (device-
+code OAuth with a local `127.0.0.1` callback -- confirmed this must run in
+a browser on the same machine as the CLI; a first attempt expired
+unclicked, a second succeeded). Resulting credentials are real
+(`arn:aws:iam::257212469831:root`), but every `ec2`/`ssm` call under that
+identity fails with `SubscriptionRequiredException`/`OptInRequired`. The
+user confirmed this is the correct account for the EC2 host -- it's simply
+never been activated for EC2/SSM API usage (an AWS-side billing/account-
+activation gate, separate from IAM permissions). **Not fixable from the
+CLI or by retrying** — needs the Founder to activate the account on
+aws.amazon.com. Until then, the SSH-key path from
+[[whatsapp-ai-agency-cutover]] (still outstanding since 2026-09-01) is the
+only real way to inspect/restart the worker. `capability_registry`:
+`capability:ec2_worker_restart_path` stays `EXTERNAL_REQUIRED`.
+
 ## Update 101 — origin/main had genuinely diverged (~18 commits, a whole revenue-ops/workforce-core subsystem) and its own `create_website` tool was a live production fabrication engine; merged and fixed
 
 Following Update 100's Giri Tours investigation, checked whether
