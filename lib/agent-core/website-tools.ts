@@ -153,7 +153,7 @@ export const WEBSITE_TOOLS: AgentTool[] = [
       if (!tenantId || !description) {
         return { outcome: "MISSING_INPUT", reason: "missing_input" };
       }
-      return createTenantWebsite({
+      const result = await createTenantWebsite({
         supabase: ctx.supabase as never,
         tenantId,
         actorUserId: ctx.principal.authUserId,
@@ -162,6 +162,22 @@ export const WEBSITE_TOOLS: AgentTool[] = [
         websiteType: typeof args.websiteType === "string" ? args.websiteType : undefined,
         channel: ctx.principal.channel === "whatsapp" ? "whatsapp_agent" : `agent_${ctx.principal.channel}`,
       });
+      // createTenantWebsite's own previewUrl (/app/website/<id>/preview) is
+      // correct for the dashboard (relative, session-authenticated) but
+      // useless from WhatsApp/Admin Chat -- it 404s/redirects-to-login for
+      // anyone without an active dashboard session, and can't be forwarded.
+      // The real, anonymously-reachable public link is app/site/[domain]'s
+      // catch-all route on Stratxcel's own domain (verified live 2026-09-13
+      // -- see docs/discovery/WHATSAPP_AI_AGENCY_GAP_AUDIT.md Update 100).
+      // A registered *.stratxcel.site wildcard preview domain would be
+      // nicer but doesn't exist yet (same doc) -- this is the real link
+      // that actually works today, not an aspirational one.
+      const r = result as { outcome?: string; project?: { slug?: string } } | null;
+      if (r?.outcome === "CREATED" && r.project?.slug) {
+        const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://stratxcel.in").replace(/\/$/, "");
+        return { ...result, publicPreviewUrl: `${baseUrl}/site/${r.project.slug}` };
+      }
+      return result;
     },
     interpretOutcome(result) {
       const r = result as { outcome?: string; reason?: string } | null;
