@@ -169,10 +169,16 @@ export async function GET(request: Request) {
   const { supabase: serviceDb } = getTenantServiceContext();
   const { data: sites, error } = await serviceDb
     .from("site_projects")
-    .select("id, tenant_id, name, slug, status, custom_domain, framework, template, created_at, updated_at")
+    .select("id, tenant_id, name, slug, status, custom_domain, template_id, created_at, updated_at")
     .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false });
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
-  return Response.json({ sites: sites ?? [] }, { headers: { "Cache-Control": "no-store" } });
+  const normalizedSites = (sites ?? []).map((s: Record<string, unknown>) => ({
+    ...s,
+    template: s.template_id,
+    framework: "nextjs",
+  }));
+
+  return Response.json({ sites: normalizedSites }, { headers: { "Cache-Control": "no-store" } });
 }

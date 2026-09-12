@@ -15,6 +15,7 @@ export const DEPARTMENT_KEYS = [
   "crm",
   "whatsapp",
   "conversion",
+  "acquisition",
   "analytics",
   "reporting",
   "optimization",

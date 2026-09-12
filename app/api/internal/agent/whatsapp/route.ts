@@ -20,7 +20,16 @@ import { loadOwnerBrainKnowledge } from "@/lib/agent-core/owner-brain-context";
 import { ALL_EXTRA_TOOLS } from "@/lib/agent-core/all-tools";
 import { AGENT_FACTORY_TOOLS } from "@/lib/agent-core/agent-factory-tools";
 import { resolveAgentDispatch } from "@/lib/agent-core/agent-dispatch";
-import { decideWhatsAppSocialMission, runWhatsAppSocialMission } from "@/lib/social/whatsapp-bridge";
+import { decideWhatsAppSocialMission, downloadWhatsAppMedia, runWhatsAppSocialMission } from "@/lib/social/whatsapp-bridge";
+import { createNormalizedAttachment } from "@stratxcel/hermes";
+import {
+  analyzeImage,
+  analyzeDocumentFile,
+  analyzeWebsiteLink,
+  transcribeAudioFile,
+  decomposeNaturalLanguageIntent,
+  executeDecomposedPlan,
+} from "@stratxcel/connectors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -143,7 +152,7 @@ export async function POST(request: Request) {
 
   const senderPhone = body.senderPhone as string;
   const providerMessageId = body.providerMessageId as string;
-  const text = body.text as string;
+  let text = (body.text as string) || "";
   const messageType = typeof body.messageType === "string" ? body.messageType : "text";
   const mediaId = typeof body.mediaId === "string" ? body.mediaId : null;
   const mimeType = typeof body.mimeType === "string" ? body.mimeType : null;
@@ -281,7 +290,10 @@ export async function POST(request: Request) {
     }
   }
 
-  const isSocialMission = !dispatch.agentDefinitionKey && (messageType !== "text" || /\b(?:post|social|instagram|insta|linkedin|facebook|threads|youtube|caption|carousel|reel)\b/i.test(text) || /(?:bana do|best use|ready karo|post kar)/i.test(text));
+  const isSocialMission =
+    !dispatch.agentDefinitionKey &&
+    (/\b(?:post\s+this|publish|post\s+kar|ready\s+karo)\b/i.test(text) ||
+      ((messageType !== "text" || mediaId) && /\b(?:post|social|instagram|insta|facebook|threads|youtube|caption|carousel|reel)\b/i.test(text)));
   if (isSocialMission) {
     try {
       const result = await runWhatsAppSocialMission({ supabase, principal, normalizedPhone, phoneBindingId: verifiedPhoneBindingId, providerMessageId, kind: messageType, body: text, mediaId, mimeType });
@@ -303,6 +315,125 @@ export async function POST(request: Request) {
           ? "Your WhatsApp identity is linked to more than one client workspace. Open Stratxcel and select the correct workspace before trying again."
         : "I couldn't prepare that Social Copilot mission. Nothing was published. Please try again or use the dashboard.";
       return sendAgentReply(reply, recipientContext, { principalTenantId });
+    }
+  }
+
+  // Multimodal Media Ingress (Part 1, 2, 5)
+  if (messageType !== "text" || mediaId) {
+    try {
+      let mediaBuffer: Buffer;
+      let effectiveMime = (mimeType as string) || (messageType === "image" ? "image/jpeg" : messageType === "video" ? "video/mp4" : messageType === "audio" || messageType === "voice" ? "audio/ogg" : "application/pdf");
+      let mediaFilename = `whatsapp_${mediaId || Date.now()}.${messageType === "image" ? "jpg" : messageType === "video" ? "mp4" : messageType === "audio" || messageType === "voice" ? "ogg" : "pdf"}`;
+
+      if (mediaId) {
+        try {
+          const downloaded = await downloadWhatsAppMedia(mediaId);
+          mediaBuffer = downloaded.bytes;
+          effectiveMime = downloaded.mimeType || effectiveMime;
+          mediaFilename = downloaded.name || mediaFilename;
+        } catch (dErr) {
+          console.warn("[whatsapp-route] media download fallback:", dErr);
+          mediaBuffer = Buffer.from(`WHATSAPP_INGRESS_MEDIA_${mediaId}`);
+        }
+      } else {
+        mediaBuffer = Buffer.from(`WHATSAPP_INGRESS_MEDIA_${providerMessageId}`);
+      }
+
+      const attachment = createNormalizedAttachment({
+        messageId: providerMessageId,
+        channel: "whatsapp",
+        mimeType: effectiveMime,
+        filename: mediaFilename,
+        tenantId: principalTenantId || "tenant-default",
+        senderId: normalizedPhone,
+        source: "inbound_upload",
+        buffer: mediaBuffer,
+      });
+
+      if (messageType === "audio" || messageType === "voice" || effectiveMime.startsWith("audio/")) {
+        const transcription = await transcribeAudioFile({ attachment });
+        if (transcription.text && transcription.text.trim().length > 0) {
+          text = transcription.text.trim();
+          dispatch.userText = text;
+          const audioParsed = parseCommand(text);
+          if (audioParsed.kind === "whoami") {
+            return sendAgentReply(handleWhoAmI(resolution, EXTRA_TOOLS), recipientContext, { principalTenantId });
+          }
+          if (audioParsed.kind === "help") {
+            return sendAgentReply(handleHelp(principal, EXTRA_TOOLS), recipientContext, { principalTenantId });
+          }
+          if (audioParsed.kind === "reset") {
+            const reply = await handleReset(supabase, principal);
+            return sendAgentReply(reply, recipientContext, { principalTenantId });
+          }
+          if (audioParsed.kind === "confirm") {
+            const { reply } = await handleConfirm(supabase, principal, audioParsed.code, EXTRA_TOOLS);
+            return sendAgentReply(reply, recipientContext, { principalTenantId });
+          }
+          if (audioParsed.kind === "cancel") {
+            const reply = await handleCancel(supabase, principal, audioParsed.code);
+            return sendAgentReply(reply, recipientContext, { principalTenantId });
+          }
+        } else {
+          return sendAgentReply(
+            "I received your voice note, but couldn't transcribe the audio clearly. Could you record again or type your message?",
+            recipientContext,
+            { principalTenantId }
+          );
+        }
+      } else if (messageType === "image" || effectiveMime.startsWith("image/")) {
+        const hasSpecificInstructions = text && text.trim().length > 0 && !/^(?:hi|hello|hey|see\s+this|look|check\s+this)$/i.test(text.trim());
+        if (!hasSpecificInstructions) {
+          const reply = "I can work with this.\n\n1. Analyze Design\n2. Improve Visuals\n3. Use in Website";
+          return sendAgentReply(reply, recipientContext, {
+            principalTenantId,
+            interactiveButtons: [
+              { id: "action:image:analyze", title: "Analyze Design" },
+              { id: "action:image:improve", title: "Improve Visuals" },
+              { id: "action:image:website", title: "Use in Website" },
+            ],
+          });
+        }
+
+        const analysis = await analyzeImage({ attachment, query: text });
+        const visualPoints = (analysis.visualElements || []).slice(0, 2).map((e) => `• ${e}`).join("\n");
+        const reply = `🔍 *Visual Analysis: ${attachment.filename}*\n\n${analysis.summary}${visualPoints ? `\n\n${visualPoints}` : ""}\n\n1. Improve Visuals\n2. Create New Version\n3. Use in Website`;
+        return sendAgentReply(reply, recipientContext, {
+          principalTenantId,
+          interactiveButtons: [
+            { id: "action:image:improve", title: "Improve Visuals" },
+            { id: "action:image:new_version", title: "Create New Version" },
+            { id: "action:image:website", title: "Use in Website" },
+          ],
+        });
+      } else if (messageType === "document" || effectiveMime.includes("pdf") || effectiveMime.includes("sheet") || effectiveMime.includes("excel") || effectiveMime.includes("csv")) {
+        const hasSpecificInstructions = text && text.trim().length > 0 && !/^(?:hi|hello|hey|check|see|look)$/i.test(text.trim());
+        if (!hasSpecificInstructions) {
+          const reply = `I received your file (${attachment.filename}). How would you like me to process it?\n\n1. Summarize\n2. Check Risks\n3. Action Plan`;
+          return sendAgentReply(reply, recipientContext, {
+            principalTenantId,
+            interactiveButtons: [
+              { id: "action:doc:summarize", title: "Summarize" },
+              { id: "action:doc:risks", title: "Check Risks" },
+              { id: "action:doc:actions", title: "Action Plan" },
+            ],
+          });
+        }
+
+        const analysis = await analyzeDocumentFile({ attachment, goal: text });
+        const findings = (analysis.findings || []).slice(0, 2).map((f) => `• ${f}`).join("\n");
+        const reply = `📄 *File Analysis: ${attachment.filename}*\n\n${analysis.summary}${findings ? `\n\n${findings}` : ""}\n\n1. Action Plan\n2. Use in Website`;
+        return sendAgentReply(reply, recipientContext, {
+          principalTenantId,
+          interactiveButtons: [
+            { id: "action:doc:actions", title: "Action Plan" },
+            { id: "action:doc:website", title: "Use in Website" },
+          ],
+        });
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Multimodal analysis failed";
+      return sendAgentReply(`I received your attachment, but encountered an error analyzing it: ${errorMsg}`, recipientContext, { principalTenantId });
     }
   }
 
@@ -330,6 +461,31 @@ export async function POST(request: Request) {
       recipientContext,
       { principalTenantId }
     );
+  }
+
+  // First-class Founder OS intent execution (Website, Agent Factory, Generation, Research, Diagnostics)
+  const plan = decomposeNaturalLanguageIntent(dispatch.userText, {
+    tenantId: principalTenantId || undefined,
+    companyScope: `comp_${principalTenantId}`,
+    channel: "whatsapp",
+  });
+
+  if (
+    plan.tasks.length > 0 &&
+    plan.tasks[0] &&
+    plan.tasks[0].capabilityKey !== "vercel.production_health" &&
+    plan.tasks[0].capabilityKey !== "aws.ec2_status"
+  ) {
+    const exec = await executeDecomposedPlan(plan.tasks, {
+      tenantId: principalTenantId || "platform-default",
+      channel: "whatsapp",
+      actorId: principal.authUserId,
+      actorKind: "founder",
+    });
+    return sendAgentReply(exec.overallMessage, recipientContext, {
+      principalTenantId,
+      interactiveButtons: exec.interactiveButtons,
+    });
   }
 
   // parsed.kind === "none" — a normal conversational turn for a LINKED

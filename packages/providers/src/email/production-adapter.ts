@@ -28,10 +28,34 @@ export class ProductionEmailProvider implements EmailProvider {
       });
     }
 
-    const messageId = `msg_live_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const fromAddress = process.env.EMAIL_FROM || "onboarding@resend.dev";
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: fromAddress,
+        to: Array.isArray(input.to) ? input.to : [input.to],
+        subject: input.subject,
+        html: input.html,
+        text: input.text,
+      }),
+    });
+
+    const data = (await res.json().catch(() => ({}))) as { id?: string; message?: string };
+    if (!res.ok || !data.id) {
+      throw new ProviderError({
+        message: data.message || `Resend send failed with status ${res.status}`,
+        code: "PROVIDER_ERROR",
+        provider: this.name,
+        capability: "email",
+      });
+    }
 
     return {
-      messageId,
+      messageId: data.id,
       provider: this.name,
       status: "SENT",
       deliveredAt: new Date().toISOString(),

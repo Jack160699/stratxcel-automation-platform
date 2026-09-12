@@ -71,6 +71,10 @@ export interface ToolContractMap {
     input: Record<string, never>;
     output: { sites: unknown[] };
   };
+  create_website: {
+    input: { businessName?: string; purpose?: string; designPreference?: string; domain?: string };
+    output: Record<string, unknown>;
+  };
   list_leads: {
     input: { limit?: number };
     output: { leads: unknown[] };
@@ -208,6 +212,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "attach_research_evidence",
   "check_growth_status",
   "check_website_status",
+  "create_website",
   "list_leads",
   "get_lead",
   "generate_image",

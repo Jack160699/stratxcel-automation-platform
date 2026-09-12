@@ -16,6 +16,7 @@ const ROLE_DEFINITIONS: readonly SpecialistRoleDefinition[] = [
   role({ key: "ceo_delegate", department: "executive", label: "CEO delegate", purpose: "Represents executive intent and approves mission direction.", typicalInputs: ["mission_brief"], typicalOutputs: ["mission_charter"], requestableCapabilityClasses: ["analytics.read"], riskLevel: "low", evidenceRequirement: "recommended" }),
   role({ key: "mission_coordinator", department: "executive", label: "Mission coordinator", purpose: "Orchestrates mission scope, owners, and handoffs.", typicalInputs: ["mission_brief"], typicalOutputs: ["mission_charter"], requestableCapabilityClasses: ["analytics.read"], riskLevel: "low", evidenceRequirement: "none" }),
   role({ key: "decision_recorder", department: "executive", label: "Decision recorder", purpose: "Captures decisions, rationale, and accountability.", typicalInputs: ["strategy_memo"], typicalOutputs: ["decision_log"], requestableCapabilityClasses: ["report.generate"], riskLevel: "low", evidenceRequirement: "recommended" }),
+  role({ key: "hermes_ceo", department: "executive", label: "Hermes CEO", purpose: "Autonomous executive agent coordinating enterprise revenue operations, multi-agent fleet dispatch, and company offer execution.", typicalInputs: ["offer_specification", "mission_brief", "commercial_review"], typicalOutputs: ["mission_charter", "executive_summary", "decision_log"], requestableCapabilityClasses: ["research.web", "analytics.read", "report.generate", "crm.read"], riskLevel: "low", evidenceRequirement: "recommended" }),
   role({ key: "growth_strategist", department: "strategy", label: "Growth strategist", purpose: "Designs growth bets and measurable outcomes.", typicalInputs: ["mission_brief"], typicalOutputs: ["strategy_memo"], requestableCapabilityClasses: ["research.web"], riskLevel: "medium", evidenceRequirement: "recommended" }),
   role({ key: "channel_strategist", department: "strategy", label: "Channel strategist", purpose: "Selects and prioritizes channels.", typicalInputs: ["market_context"], typicalOutputs: ["channel_plan"], requestableCapabilityClasses: ["research.web"], riskLevel: "medium", evidenceRequirement: "recommended" }),
   role({ key: "campaign_planner", department: "strategy", label: "Campaign planner", purpose: "Builds campaign architecture and dependencies.", typicalInputs: ["strategy_memo"], typicalOutputs: ["campaign_plan"], requestableCapabilityClasses: ["report.generate"], riskLevel: "medium", evidenceRequirement: "recommended" }),
@@ -95,17 +96,32 @@ const ROLE_DEFINITIONS: readonly SpecialistRoleDefinition[] = [
   role({ key: "solution_architect", department: "engineering", label: "Solution architect", purpose: "Designs technical solutions.", typicalInputs: ["technical_brief"], typicalOutputs: ["solution_design"], requestableCapabilityClasses: ["website.generate"], riskLevel: "medium", evidenceRequirement: "recommended" }),
   role({ key: "integration_specialist", department: "engineering", label: "Integration specialist", purpose: "Implements system integrations.", typicalInputs: ["integration_spec"], typicalOutputs: ["integration_plan"], requestableCapabilityClasses: ["website.deploy"], riskLevel: "medium", evidenceRequirement: "recommended" }),
   role({ key: "reliability_reviewer", department: "engineering", label: "Reliability reviewer", purpose: "Reviews failure modes and observability.", typicalInputs: ["solution_design"], typicalOutputs: ["reliability_review"], requestableCapabilityClasses: [], riskLevel: "medium", evidenceRequirement: "recommended" }),
+  role({ key: "enablement_engineer", department: "engineering", label: "Enablement engineer", purpose: "Designs, tests, and deploys missing capabilities, tools, and integrations for workforce enablement.", typicalInputs: ["technical_brief", "capability_spec"], typicalOutputs: ["solution_design", "capability_receipt"], requestableCapabilityClasses: ["website.deploy"], riskLevel: "high", evidenceRequirement: "required" }),
   role({ key: "budget_analyst", department: "finance", label: "Budget analyst", purpose: "Tracks budgets and allocation.", typicalInputs: ["budget_brief"], typicalOutputs: ["budget_report"], requestableCapabilityClasses: ["analytics.read"], riskLevel: "medium", evidenceRequirement: "recommended" }),
   role({ key: "cost_guardian", department: "finance", label: "Cost guardian", purpose: "Enforces spend guardrails.", typicalInputs: ["ads_plan"], typicalOutputs: ["spend_clearance"], requestableCapabilityClasses: ["ads.plan"], riskLevel: "high", evidenceRequirement: "recommended" }),
   role({ key: "commercial_compliance_reviewer", department: "finance", label: "Commercial compliance reviewer", purpose: "Reviews commercial terms.", typicalInputs: ["proposal_draft"], typicalOutputs: ["commercial_review"], requestableCapabilityClasses: ["report.generate"], riskLevel: "medium", evidenceRequirement: "required" }),
+  role({ key: "lead_gen_specialist", department: "crm", label: "Lead gen specialist", purpose: "Discovers ICP matches, writes DISCOVERED leads, and identifies prospects.", typicalInputs: ["offer_brief", "market_context"], typicalOutputs: ["crm_snapshot", "lead_list"], requestableCapabilityClasses: ["research.web", "crm.write"], riskLevel: "medium", evidenceRequirement: "recommended" }),
+  role({ key: "sales_specialist", department: "sales", label: "Sales specialist", purpose: "Qualifies leads, drafts outreach, and manages pipeline stages.", typicalInputs: ["crm_snapshot", "offer_brief"], typicalOutputs: ["outreach_sequence", "proposal_draft"], requestableCapabilityClasses: ["crm.read", "crm.write"], riskLevel: "high", evidenceRequirement: "recommended" }),
+  role({ key: "customer_success_specialist", department: "customer_success", label: "Customer success specialist", purpose: "Oversees customer onboarding journeys, retention, and post-sale fulfillment.", typicalInputs: ["customer_profile", "crm_snapshot"], typicalOutputs: ["success_plan", "onboarding_playbook"], requestableCapabilityClasses: ["crm.read", "crm.write"], riskLevel: "medium", evidenceRequirement: "recommended" }),
+  role({ key: "finance_recorder", department: "finance", label: "Finance recorder", purpose: "Records verified payment events and audits revenue transactions.", typicalInputs: ["payment_receipt", "commercial_review"], typicalOutputs: ["budget_report", "revenue_event"], requestableCapabilityClasses: ["analytics.read", "report.generate"], riskLevel: "low", evidenceRequirement: "required" }),
+  role({ key: "lead_gen_specialist", department: "acquisition", label: "Lead gen specialist", purpose: "Discovers ICP matches, sources B2B accounts, and stages DISCOVERED leads.", typicalInputs: ["lead_brief", "icp_criteria"], typicalOutputs: ["lead_roster"], requestableCapabilityClasses: ["research.web", "crm.write"], riskLevel: "medium", evidenceRequirement: "recommended" }),
+  role({ key: "solara_solar_consultant", department: "acquisition", label: "Solara solar consultant", purpose: "Analyzes rooftop capacity, drafts solar ROI proposals, and stages solar leads.", typicalInputs: ["lead_brief", "site_assessment_data"], typicalOutputs: ["proposal_draft"], requestableCapabilityClasses: ["research.web", "crm.write"], riskLevel: "high", evidenceRequirement: "recommended" }),
+  role({ key: "pipeline_conversion_specialist", department: "acquisition", label: "Pipeline conversion specialist", purpose: "Manages multi-channel lead progression from discovery to contract close.", typicalInputs: ["lead_roster", "offer_specification"], typicalOutputs: ["outreach_sequence"], requestableCapabilityClasses: ["crm.write", "whatsapp.send"], riskLevel: "high", evidenceRequirement: "recommended" }),
+  role({ key: "acquisition_strategist", department: "acquisition", label: "Acquisition strategist", purpose: "Architects outbound and inbound customer acquisition campaigns.", typicalInputs: ["offer_specification", "icp_criteria"], typicalOutputs: ["outreach_sequence"], requestableCapabilityClasses: ["crm.read", "analytics.read"], riskLevel: "high", evidenceRequirement: "recommended" }),
 ];
 
 export const ROLE_REGISTRY: Record<string, SpecialistRoleDefinition> = Object.fromEntries(
   ROLE_DEFINITIONS.map((r) => [roleRegistryKey(r.department, r.key), r]),
 ) as Record<string, SpecialistRoleDefinition>;
 
-export function getRole(department: string, roleKey: string): SpecialistRoleDefinition | undefined {
-  return ROLE_REGISTRY[roleRegistryKey(department, roleKey)];
+export function getRole(departmentOrRoleKey: string, maybeRoleKey?: string): SpecialistRoleDefinition | undefined {
+  if (maybeRoleKey) {
+    return ROLE_REGISTRY[roleRegistryKey(departmentOrRoleKey, maybeRoleKey)];
+  }
+  return (
+    ROLE_REGISTRY[departmentOrRoleKey] ??
+    ROLE_DEFINITIONS.find((r) => r.key === departmentOrRoleKey)
+  );
 }
 
 export function listRolesForDepartment(department: string): SpecialistRoleDefinition[] {
@@ -121,9 +137,11 @@ export function listAllRoles(): SpecialistRoleDefinition[] {
   return [...ROLE_DEFINITIONS];
 }
 
-export function assertRole(department: string, roleKey: string): SpecialistRoleDefinition {
-  const found = getRole(department, roleKey);
-  if (!found) throw new Error(`unknown_role:${department}.${roleKey}`);
+export function assertRole(departmentOrRoleKey: string, maybeRoleKey?: string): SpecialistRoleDefinition {
+  const found = getRole(departmentOrRoleKey, maybeRoleKey);
+  if (!found) {
+    throw new Error(`unknown_role:${departmentOrRoleKey}${maybeRoleKey ? `.${maybeRoleKey}` : ""}`);
+  }
   return found;
 }
 

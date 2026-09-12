@@ -68,33 +68,89 @@ export async function recordWhatsAppMessage(
   return { success: result.success, alreadyRecorded: result.already_recorded, messageId: result.message_id, conversationId: result.conversation_id, reason: result.reason };
 }
 
-/** Tolerates out-of-order delivery — see the RPC's own rank-based no-regression guard. */
-export async function updateWhatsAppMessageStatus(
-  supabase: ServiceClient,
-  input: { tenantId: string; providerMessageId: string; status: WhatsAppMessageStatus }
-): Promise<{ success: boolean; updated?: boolean; reason?: string }> {
-  const { data, error } = await supabase.rpc("update_whatsapp_message_status", {
-    p_tenant_id: input.tenantId,
-    p_provider_message_id: input.providerMessageId,
-    p_status: input.status,
-  });
-  if (error) throw new Error(`updateWhatsAppMessageStatus: ${error.message}`);
-  return data as { success: boolean; updated?: boolean; reason?: string };
+/**
+ * Strict status transition rules to prevent race conditions and regressions:
+ * 1. read: terminal success state, cannot transition to anything.
+ * 2. delivered: can only transition to read. DELIVERED CAN NEVER BE OVERWRITTEN BY FAILED!
+ * 3. failed: terminal failure, cannot regress to queued, submitted, or sent.
+ * 4. queued/submitted/sent: can progress forward or transition to failed.
+ */
+export function canTransitionWhatsAppStatus(
+  currentStatus: WhatsAppMessageStatus,
+  newStatus: WhatsAppMessageStatus
+): boolean {
+  if (currentStatus === newStatus) return false;
+  if (currentStatus === "read") return false;
+  if (currentStatus === "delivered") {
+    return newStatus === "read";
+  }
+  if (currentStatus === "failed") {
+    return newStatus === "delivered" || newStatus === "read";
+  }
+
+  const rank: Record<WhatsAppMessageStatus, number> = {
+    queued: 0,
+    submitted: 1,
+    sent: 2,
+    delivered: 3,
+    read: 4,
+    failed: 99,
+  };
+
+  if (newStatus === "failed") {
+    return currentStatus === "queued" || currentStatus === "submitted" || currentStatus === "sent";
+  }
+
+  return (rank[newStatus] ?? 0) > (rank[currentStatus] ?? 0);
 }
 
-const STATUS_RANK: Record<WhatsAppMessageStatus, number> = { queued: 0, submitted: 1, sent: 2, delivered: 3, read: 4, failed: 5 };
+/** Tolerates out-of-order delivery — enforces strict no-regression status guards and error persistence. */
+export async function updateWhatsAppMessageStatus(
+  supabase: ServiceClient,
+  input: {
+    tenantId: string;
+    providerMessageId: string;
+    status: WhatsAppMessageStatus;
+    error?: Record<string, unknown> | null;
+  }
+): Promise<{ success: boolean; updated?: boolean; reason?: string }> {
+  const { data: currentMsg, error: fetchErr } = await supabase
+    .from("whatsapp_messages")
+    .select("id, status")
+    .eq("tenant_id", input.tenantId)
+    .eq("provider_message_id", input.providerMessageId)
+    .maybeSingle();
+
+  if (fetchErr) throw new Error(`updateWhatsAppMessageStatus fetch: ${fetchErr.message}`);
+  if (!currentMsg) {
+    return { success: false, reason: "message_not_found" };
+  }
+
+  if (!canTransitionWhatsAppStatus(currentMsg.status as WhatsAppMessageStatus, input.status)) {
+    return { success: true, updated: false, reason: "transition_disallowed_or_stale" };
+  }
+
+  const updatePayload: Record<string, unknown> = {
+    status: input.status,
+    status_updated_at: new Date().toISOString(),
+  };
+  if (input.error !== undefined) {
+    updatePayload.error = input.error;
+  }
+
+  const { error } = await supabase
+    .from("whatsapp_messages")
+    .update(updatePayload)
+    .eq("id", currentMsg.id);
+
+  if (error) throw new Error(`updateWhatsAppMessageStatus: ${error.message}`);
+  return { success: true, updated: true };
+}
 
 /**
  * Delivery/read status correlation for WhatsApp Agent replies (see
  * agent_channel_messages, the channel-principal counterpart to
- * whatsapp_messages). Same rank-based no-regression intent as
- * update_whatsapp_message_status's RPC, but implemented here in TS rather
- * than a second Postgres function — this table has no RPC layer yet, and
- * this correlation path is intentionally best-effort: the read-then-update
- * here is NOT atomic the way the RPC's single UPDATE...WHERE is, so a rare
- * concurrent pair of status webhooks could race. That's an accepted,
- * documented limitation for this additive correlation path, not something
- * silently assumed to be as strong as the RPC.
+ * whatsapp_messages). Enforces identical strict transition guards.
  */
 export async function updateAgentChannelMessageStatus(
   supabase: ServiceClient,
@@ -108,9 +164,9 @@ export async function updateAgentChannelMessageStatus(
   if (readError) throw new Error(`updateAgentChannelMessageStatus: ${readError.message}`);
   if (!existing) return { success: true, updated: false, reason: "not_found" };
 
-  const currentRank = STATUS_RANK[existing.status as WhatsAppMessageStatus] ?? -1;
-  const nextRank = STATUS_RANK[input.status];
-  if (nextRank < currentRank) return { success: true, updated: false, reason: "stale_status" };
+  if (!canTransitionWhatsAppStatus(existing.status as WhatsAppMessageStatus, input.status)) {
+    return { success: true, updated: false, reason: "stale_or_disallowed_status" };
+  }
 
   const { error: updateError } = await supabase
     .from("agent_channel_messages")

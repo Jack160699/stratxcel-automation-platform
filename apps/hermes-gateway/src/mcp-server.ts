@@ -98,6 +98,7 @@ const TOOL_DESCRIPTIONS: Record<McpCallableName, string> = {
   attach_research_evidence: "Attach a cited source to this mission's research trail.",
   check_growth_status: "Real, currently-stored SEO/AEO/GEO opportunities, recommendations, actions, and measurement snapshots for this mission's tenant. Never re-crawls.",
   check_website_status: "Real, currently-stored Stratxcel-built websites for this mission's tenant.",
+  create_website: "Create a new website from scratch -- builds project shell, generates code via Antigravity, sets up GitHub repo and Vercel preview.",
   list_leads: "Real CRM leads for this mission's tenant, most recent first.",
   get_lead: "Get a single real CRM lead by id (tenant-scoped).",
   generate_image: "Generate a real, brand-grounded image using Stratxcel's existing image engine. Real cost, gated by this mission's budget and the tenant's own monthly AI budget.",

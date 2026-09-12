@@ -11,3 +11,5 @@ export * from "./cost.ts";
 export * from "./reviews.ts";
 export * from "./reports.ts";
 export * from "./learning-loop.ts";
+export * from "./kpi-tracker.ts";
+export * from "./employee-evaluator.ts";

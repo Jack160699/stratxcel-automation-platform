@@ -1,0 +1,251 @@
+/* StratXcel Office 2.5D Digital Headquarters Animations - V3 Living Digital Company */
+
+/* 1. Ambient Camera Drift for Screensaver Mode */
+@keyframes office-camera-pan {
+  0% {
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+  33% {
+    transform: scale(1.02) translate3d(-10px, -6px, 0);
+  }
+  66% {
+    transform: scale(1.025) translate3d(8px, -10px, 0);
+  }
+  100% {
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+}
+
+/* 2. Realistic Hand/Arm Typing Animation */
+@keyframes office-typing-hands-l {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-2px) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(0.5px) rotate(1deg);
+  }
+  75% {
+    transform: translateY(-1.5px) rotate(-1deg);
+  }
+}
+
+@keyframes office-typing-hands-r {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  30% {
+    transform: translateY(-1.8px) rotate(2deg);
+  }
+  60% {
+    transform: translateY(-2.2px) rotate(-1deg);
+  }
+  85% {
+    transform: translateY(0.5px) rotate(1deg);
+  }
+}
+
+/* 3. Seated Character Breathing (Alive even when waiting) */
+@keyframes office-seated-breath {
+  0%, 100% {
+    transform: translateY(0px) scaleY(1);
+  }
+  50% {
+    transform: translateY(-1px) scaleY(1.015);
+  }
+}
+
+/* 4. Walking Bob & Leg Strides */
+@keyframes office-walking-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes office-walk-left-leg {
+  0%, 100% {
+    transform: rotate(-16deg);
+  }
+  50% {
+    transform: rotate(16deg);
+  }
+}
+
+@keyframes office-walk-right-leg {
+  0%, 100% {
+    transform: rotate(16deg);
+  }
+  50% {
+    transform: rotate(-16deg);
+  }
+}
+
+/* 5. Carried Artifact Floating & Glow */
+@keyframes office-artifact-hover {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-2px) rotate(1.5deg);
+  }
+}
+
+@keyframes office-handoff-pulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 6px rgba(6, 182, 212, 0.4));
+  }
+  50% {
+    transform: scale(1.1);
+    filter: drop-shadow(0 0 16px rgba(16, 185, 129, 0.9));
+  }
+}
+
+/* 6. Monitor Glow & Active Flicker */
+@keyframes office-screen-glow {
+  0%, 100% {
+    opacity: 0.88;
+    filter: brightness(1) drop-shadow(0 0 10px currentColor);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1.15) drop-shadow(0 0 18px currentColor);
+  }
+}
+
+/* 7. Architectural Plant Sway */
+@keyframes office-plant-sway-slow {
+  0%, 100% {
+    transform: rotate(0deg) skewX(0deg);
+  }
+  50% {
+    transform: rotate(1.8deg) skewX(0.8deg);
+  }
+}
+
+/* 8. Fiber-Optic Floor Conduits Pulse */
+@keyframes office-conduit-energy {
+  0% {
+    stroke-dashoffset: 60;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* 9. Wall Sign Ambient Illumination */
+@keyframes office-sign-halo {
+  0%, 100% {
+    opacity: 0.45;
+    filter: drop-shadow(0 0 25px rgba(6, 182, 212, 0.45));
+  }
+  50% {
+    opacity: 0.75;
+    filter: drop-shadow(0 0 45px rgba(99, 102, 241, 0.65));
+  }
+}
+
+/* 10. Radar Sweep */
+@keyframes office-radar-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Helper Animation Classes */
+.office-camera-drift {
+  animation: office-camera-pan 32s ease-in-out infinite;
+  transform-origin: center 40%;
+}
+
+.office-typing-l {
+  animation: office-typing-hands-l 0.35s ease-in-out infinite;
+}
+
+.office-typing-r {
+  animation: office-typing-hands-r 0.38s ease-in-out infinite;
+}
+
+.office-alive-breath {
+  animation: office-seated-breath 4s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.office-walk-bob {
+  animation: office-walking-bounce 0.4s ease-in-out infinite;
+}
+
+.office-leg-l {
+  animation: office-walk-left-leg 0.4s ease-in-out infinite;
+  transform-origin: top center;
+}
+
+.office-leg-r {
+  animation: office-walk-right-leg 0.4s ease-in-out infinite;
+  transform-origin: top center;
+}
+
+.office-artifact-float {
+  animation: office-artifact-hover 1.8s ease-in-out infinite;
+}
+
+.office-handoff-beacon {
+  animation: office-handoff-pulse 1.2s ease-in-out infinite;
+}
+
+.office-screen-active {
+  animation: office-screen-glow 3s ease-in-out infinite;
+}
+
+.office-plant-swaying {
+  animation: office-plant-sway-slow 7s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.office-conduit-flow {
+  stroke-dasharray: 8 16;
+  animation: office-conduit-energy 2.4s linear infinite;
+}
+
+.office-sign-backlight {
+  animation: office-sign-halo 6s ease-in-out infinite;
+}
+
+.office-radar-sweep {
+  animation: office-radar-spin 12s linear infinite;
+  transform-origin: center center;
+}
+
+/* Smooth Path Transition for Moving Characters */
+.office-moving-agent {
+  transition: left 0.7s linear, top 0.7s linear;
+}
+
+/* Accessibility: Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .office-camera-drift,
+  .office-typing-l,
+  .office-typing-r,
+  .office-alive-breath,
+  .office-walk-bob,
+  .office-leg-l,
+  .office-leg-r,
+  .office-artifact-float,
+  .office-handoff-beacon,
+  .office-screen-active,
+  .office-plant-swaying,
+  .office-conduit-flow,
+  .office-sign-backlight,
+  .office-radar-sweep {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -53,11 +53,11 @@ function run() {
   // Master build brief sections 15-16: these specific real destinations
   // belong in Technical mode, never Normal.
   const technicalHrefs = new Set(flattenNavGroups(technicalAdmin).map((i) => i.href));
-  for (const href of ["/admin/missions", "/admin/system", "/admin/audit", "/admin/integrations", "/admin/connectors", "/admin/personal-connectors", "/admin/operations", "/admin/operating-brain", "/admin/hermes", "/admin/capabilities"]) {
+  for (const href of ["/admin/system", "/admin/audit", "/admin/integrations", "/admin/personal-connectors", "/admin/operations", "/admin/operating-brain", "/admin/hermes", "/admin/capabilities"]) {
     assert.ok(technicalHrefs.has(href), `${href} must be classified Technical`);
   }
   const normalHrefs = new Set(flattenNavGroups(normalAdmin).map((i) => i.href));
-  for (const href of ["/admin", "/admin/clients", "/admin/leads", "/admin/finance", "/admin/approvals", "/admin/handoffs", "/admin/social", "/admin/team"]) {
+  for (const href of ["/admin", "/admin/office", "/admin/missions", "/admin/clients", "/admin/leads", "/admin/finance", "/admin/approvals", "/admin/handoffs", "/admin/social", "/admin/team", "/admin/connectors"]) {
     assert.ok(normalHrefs.has(href), `${href} must be classified Normal`);
   }
   // No functionality lost in the split -- every real item from before the
@@ -100,13 +100,12 @@ function run() {
   assert.ok(/sameSite:\s*["']lax["']/.test(viewModeLib));
   assert.equal(/localStorage/.test(viewModeLib), false);
 
-  // --- Toggle lives only in admin shell, same contract as the Beta toggle ---
+  // --- Toggle / Segmented control lives only in admin shell ---
   const adminShell = read("app", "admin", "(shell)", "AppShell.tsx");
-  assert.ok(/AdminViewModeToggle/.test(adminShell));
-  const toggle = read("components", "shell", "AdminViewModeToggle.tsx");
-  assert.ok(/role=["']switch["']/.test(toggle));
-  assert.ok(/aria-checked/.test(toggle));
-  assert.ok(/\/api\/admin\/view-mode/.test(toggle));
+  assert.ok(/AdminViewModeSegmented|AdminViewModeToggle/.test(adminShell));
+  const segmented = read("components", "admin", "shell", "AdminViewModeSegmented.tsx");
+  assert.ok(/aria-label=["']Admin presentation mode["']/.test(segmented));
+  assert.ok(/\/api\/admin\/view-mode/.test(segmented));
 
   // --- Customer shell has no technical-mode control ------------------------
   const clientShell = read("app", "app", "ClientAppShell.tsx");

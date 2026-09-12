@@ -1,3 +1,38 @@
+export type StratXcelPipelineStage =
+  | "DISCOVERED"
+  | "VERIFIED"
+  | "QUALIFIED"
+  | "OUTREACH_READY"
+  | "CONTACTED"
+  | "ENGAGED"
+  | "OPPORTUNITY"
+  | "PROPOSAL"
+  | "NEGOTIATION"
+  | "WON"
+  | "PAID"
+  | "FULFILLING"
+  | "FULFILLED"
+  | "LOST"
+  | "NURTURE";
+
+export const CANONICAL_STRATXCEL_PIPELINE_STAGES: readonly StratXcelPipelineStage[] = [
+  "DISCOVERED",
+  "VERIFIED",
+  "QUALIFIED",
+  "OUTREACH_READY",
+  "CONTACTED",
+  "ENGAGED",
+  "OPPORTUNITY",
+  "PROPOSAL",
+  "NEGOTIATION",
+  "WON",
+  "PAID",
+  "FULFILLING",
+  "FULFILLED",
+  "LOST",
+  "NURTURE",
+] as const;
+
 export type LeadSource = "whatsapp" | "website_form" | "manual" | "import";
 export type LeadStatus = "NEW" | "CONTACTED" | "QUALIFIED" | "WON" | "LOST";
 export type CrmLifecycleStage =

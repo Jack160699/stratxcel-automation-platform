@@ -159,7 +159,7 @@ function run() {
       evidenceIds: ["ev-5"],
     },
   });
-  assert.ok(noEnt.dimensions.some((d) => d.key === "entitlement" && d.status === "fail"));
+  assert.ok(noEnt.dimensions.some((d: any) => d.key === "entitlement" && d.status === "fail"));
 
   // campaign plan does not authorize spend
   const plan = createCampaignPlan({

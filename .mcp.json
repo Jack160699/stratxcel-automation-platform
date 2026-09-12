@@ -19,6 +19,45 @@
         "NPM_CONFIG_CACHE": "D:\\npm-cache",
         "PLAYWRIGHT_BROWSERS_PATH": "D:\\ms-playwright"
       }
+    },
+    "stratxcel-github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
+    },
+    "stratxcel-aws": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-server-aws"
+      ],
+      "env": {
+        "AWS_REGION": "ap-south-1"
+      }
+    },
+    "stratxcel-postgres": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "${SUPABASE_DB_URL}"
+      ]
+    },
+    "stratxcel-google-drive": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-google-drive"
+      ]
     }
   }
 }

@@ -1,6 +1,13 @@
 import type { ServiceClient } from "./db.ts";
 
-export type WorkerType = "mission-worker" | "whatsapp-worker" | "hermes-gateway" | "package-autopilot-worker" | "email-processor";
+export type WorkerType =
+  | "mission-worker"
+  | "whatsapp-worker"
+  | "hermes-gateway"
+  | "package-autopilot-worker"
+  | "email-processor"
+  | "antigravity-worker"
+  | "revenue-autonomous-engine";
 export type WorkerStatus = "idle" | "busy" | "degraded" | "stopped";
 
 export interface WorkerHeartbeatInput {
@@ -14,10 +21,16 @@ export interface WorkerHeartbeatInput {
 
 /** Upserted every poll cycle — one row per running process, identified by (workerType, instanceId). */
 export async function recordWorkerHeartbeat(supabase: ServiceClient, input: WorkerHeartbeatInput): Promise<void> {
+  const isAntigravity = input.workerType === "antigravity-worker";
+  const effectiveWorkerType = isAntigravity ? "mission-worker" : input.workerType;
+  const effectiveInstanceId = isAntigravity
+    ? (input.instanceId.startsWith("antigravity-worker") ? input.instanceId : `antigravity-worker-${input.instanceId}`)
+    : input.instanceId;
+
   const { error } = await supabase.from("worker_heartbeats").upsert(
     {
-      worker_type: input.workerType,
-      instance_id: input.instanceId,
+      worker_type: effectiveWorkerType,
+      instance_id: effectiveInstanceId,
       status: input.status,
       version: input.version ?? null,
       queue_backlog_hint: input.queueBacklogHint ?? null,
@@ -55,10 +68,12 @@ const STALE_AFTER_SECONDS = 90; // 3x a typical 30s heartbeat interval before we
  * zero workers."
  */
 export async function getWorkerHealth(supabase: ServiceClient, workerType: WorkerType): Promise<WorkerHealthReport> {
+  const isAntigravity = workerType === "antigravity-worker";
+
   const { data, error } = await supabase
     .from("worker_heartbeats")
     .select("*")
-    .eq("worker_type", workerType)
+    .eq("worker_type", isAntigravity ? "mission-worker" : workerType)
     .order("last_heartbeat_at", { ascending: false })
     .limit(20);
 
@@ -66,8 +81,15 @@ export async function getWorkerHealth(supabase: ServiceClient, workerType: Worke
     return { status: "unavailable", workerType, instances: [], reason: `database unreachable: ${error.message}` };
   }
 
+  const rawRows = (data ?? []) as Array<Record<string, unknown>>;
+  const filteredRows = isAntigravity
+    ? rawRows.filter((row) => String(row.instance_id).includes("antigravity"))
+    : workerType === "mission-worker"
+    ? rawRows.filter((row) => !String(row.instance_id).includes("antigravity"))
+    : rawRows;
+
   const now = Date.now();
-  const instances = (data ?? []).map((row) => ({
+  const instances = filteredRows.map((row) => ({
     instanceId: row.instance_id as string,
     status: row.status as WorkerStatus,
     lastHeartbeatAt: row.last_heartbeat_at as string,

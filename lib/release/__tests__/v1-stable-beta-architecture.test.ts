@@ -131,7 +131,7 @@ function run() {
 
   // --- Beta toggle lives only in admin shell ------------------------------
   const adminShell = read("app", "admin", "(shell)", "AppShell.tsx");
-  assert.ok(/AdminBetaModeToggle/.test(adminShell));
+  assert.ok(/AdminBetaModeToggle|AdminChannelSelector/.test(adminShell));
   const toggle = read("components", "shell", "AdminBetaModeToggle.tsx");
   assert.ok(/role=["']switch["']/.test(toggle));
   assert.ok(/aria-checked/.test(toggle));

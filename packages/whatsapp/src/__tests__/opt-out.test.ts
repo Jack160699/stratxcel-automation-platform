@@ -8,6 +8,9 @@ function run() {
   assert.equal(isOptOutMessage("unsubscribe"), true);
   assert.equal(isOptOutMessage("opt out"), true);
   assert.equal(isOptOutMessage("Please do not message me again"), true);
+  assert.equal(isOptOutMessage("Stop messaging me."), true);
+  assert.equal(isOptOutMessage("stop messaging me"), true);
+  assert.equal(isOptOutMessage("stop texting me"), true);
 
   // Real questions must never be misclassified as opt-outs
   assert.equal(isOptOutMessage("Can you stop by our office tomorrow?"), false);

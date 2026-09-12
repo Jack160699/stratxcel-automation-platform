@@ -30,6 +30,30 @@ import type { AgentTool } from "@stratxcel/agent-core";
 import { applyTenantWebsiteEdit } from "@/lib/websites/apply-tenant-website-edit";
 import { createTenantWebsite } from "@/lib/websites/create-tenant-website";
 
+// NOTE (merge 2026-09-13, Update 100 continued): origin/main independently
+// added its OWN create_website tool here, backed by
+// @stratxcel/connectors' initiateWebsiteCreation. That function is a real,
+// live, production fabrication: it writes a "COMPLETED" mission +
+// mission_events/"progress: 100" DB rows and returns a conversational
+// "Preview generated and ready for inspection" reply with a
+// `https://<slug>.vercel.app` previewUrl, a fabricated GitHub repoName, and
+// an AWAITING_APPROVAL->LIVE path that unconditionally returns
+// "✅ Website successfully deployed to production!" -- WITHOUT ever calling
+// a real GitHub or Vercel deploy API for that slug, and without generating
+// any real page content (createWebsiteProjectShell's `pages` are all empty
+// `sections: []`). Confirmed live-caused: site_projects
+// giri-tours-and-travels-etja3 (status=draft, empty pages, created
+// 2026-09-12) matches this function's exact shell shape, not
+// createTenantWebsite's (which always produces populated pages +
+// preview_ready). Deliberately NOT kept as a second create_website
+// registration -- a duplicate tool name is itself a bug, and the real
+// implementation already exists below. See
+// docs/discovery/WHATSAPP_AI_AGENCY_GAP_AUDIT.md Update 100 for the full
+// writeup; apps/hermes-gateway/src/tool-handlers.ts and
+// packages/connectors/src/resources/core-mcp-router.ts still reference the
+// fabricating function directly and need their own follow-up pass (lower
+// urgency: HERMES_MODE is currently disabled, so that path is dormant).
+
 function resolveTenantId(ctx: { principal: { kind: string; tenantId: string | null } }, args: Record<string, unknown>): string | null {
   if (ctx.principal.kind === "client") return ctx.principal.tenantId;
   const argTenantId = typeof args.tenantId === "string" && args.tenantId ? args.tenantId : null;

@@ -19,10 +19,12 @@ const DEFAULT_TEAM_ID = process.env.VERCEL_TEAM_ID ?? "team_UWCzHaOLdAOtezWqRxYN
  * issuance) — callers must still poll getVercelDomainStatus before ever
  * marking a customer's site "live".
  */
+import { resolveVercelToken } from "./hosting/vercel.ts";
+
 export async function attachDomainToVercel(
   domainName: string,
   projectId: string = DEFAULT_PROJECT_ID,
-  token: string = process.env.VERCEL_AUTH_TOKEN ?? "",
+  token: string = resolveVercelToken(),
   teamId: string = DEFAULT_TEAM_ID
 ): Promise<VercelDomainStatus> {
   if (!token) {
@@ -89,7 +91,7 @@ export async function attachDomainToVercel(
 export async function getVercelDomainStatus(
   domainName: string,
   projectId: string = DEFAULT_PROJECT_ID,
-  token: string = process.env.VERCEL_AUTH_TOKEN ?? "",
+  token: string = resolveVercelToken(),
   teamId: string = DEFAULT_TEAM_ID
 ): Promise<VercelDomainStatus> {
   if (!token) {

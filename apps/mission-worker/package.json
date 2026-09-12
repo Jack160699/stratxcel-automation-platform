@@ -21,6 +21,7 @@
     "@stratxcel/payments-and-wallet": "*",
     "@stratxcel/queue": "*",
     "@stratxcel/search-discovery": "*",
-    "@stratxcel/websites-and-domains": "*"
+    "@stratxcel/websites-and-domains": "*",
+    "@stratxcel/workforce-core": "*"
   }
 }

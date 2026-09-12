@@ -110,6 +110,16 @@ export const TOOL_PARAMETER_SCHEMAS: Partial<Record<ToolName, Record<string, unk
     properties: {},
     additionalProperties: false,
   },
+  create_website: {
+    type: "object",
+    properties: {
+      businessName: { type: "string", description: "Business or project name, if known." },
+      purpose: { type: "string", description: "What the website needs to achieve or primary business activity." },
+      designPreference: { type: "string", description: "Optional design preferences or visual style." },
+      domain: { type: "string", description: "Optional custom domain if the user specified one." },
+    },
+    additionalProperties: false,
+  },
   list_leads: {
     type: "object",
     properties: {

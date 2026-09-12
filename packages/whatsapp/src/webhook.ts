@@ -13,7 +13,10 @@ import type { ParsedInboundWhatsAppMessage } from "./types.ts";
  * https://developers.facebook.com/docs/messenger-platform/webhooks#security
  */
 export function verifyWhatsAppWebhookSignature(rawBody: string, signatureHeader: string | null): boolean {
-  const appSecret = process.env.WHATSAPP_APP_SECRET;
+  const appSecret =
+    process.env.WHATSAPP_APP_SECRET ||
+    process.env.META_WHATSAPP_APP_SECRET ||
+    process.env.META_APP_SECRET;
   if (!signatureHeader || !appSecret) return false;
 
   const [scheme, providedHex] = signatureHeader.split("=");
@@ -40,10 +43,20 @@ interface RawWhatsAppMessage {
   interactive?: { type?: string; button_reply?: { id?: string; title?: string }; list_reply?: { id?: string; title?: string } };
 }
 
+export interface RawWhatsAppStatusError {
+  code?: number;
+  title?: string;
+  message?: string;
+  error_data?: { details?: string };
+  href?: string;
+}
+
 interface RawWhatsAppStatus {
   id: string; // provider message ID (the outbound message this status is about)
   status?: string; // sent | delivered | read | failed
   timestamp?: string;
+  recipient_id?: string;
+  errors?: RawWhatsAppStatusError[];
 }
 
 interface WhatsAppWebhookPayload {
@@ -63,6 +76,9 @@ export interface ParsedWhatsAppStatusUpdate {
   providerMessageId: string;
   status: "sent" | "delivered" | "read" | "failed";
   phoneNumberId: string;
+  recipientId?: string;
+  timestamp?: string;
+  errors?: RawWhatsAppStatusError[];
 }
 
 /**
@@ -83,7 +99,14 @@ export function parseWhatsAppStatusUpdates(payload: unknown): ParsedWhatsAppStat
 
       for (const status of change.value?.statuses ?? []) {
         if (status.status === "sent" || status.status === "delivered" || status.status === "read" || status.status === "failed") {
-          updates.push({ providerMessageId: status.id, status: status.status, phoneNumberId });
+          updates.push({
+            providerMessageId: status.id,
+            status: status.status,
+            phoneNumberId,
+            recipientId: status.recipient_id,
+            timestamp: status.timestamp,
+            errors: status.errors,
+          });
         }
       }
     }

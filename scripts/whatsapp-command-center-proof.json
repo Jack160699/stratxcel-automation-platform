@@ -1,0 +1,78 @@
+{
+  "timestamp": "2026-09-09T09:18:23.946Z",
+  "totalTests": 10,
+  "passedTests": 10,
+  "livePreviewUrl": "https://solara-solara-green-preview-ibyhbb1bk-jack160699s-projects.vercel.app",
+  "results": [
+    {
+      "testId": "TEST A",
+      "name": "Website Request Intent Path",
+      "status": "PASSED",
+      "details": "Decomposed to website.create. Mission: mission_web_1788945494005_9c31, SiteProject: site_1788945494261_o613c",
+      "durationMs": 258
+    },
+    {
+      "testId": "TEST B",
+      "name": "Standalone Vercel Deployment & Modification",
+      "status": "PASSED",
+      "details": "HTTP 200 OK. Live content verified. Action buttons: Open Preview, Edit, Publish",
+      "durationMs": 8212
+    },
+    {
+      "testId": "TEST C",
+      "name": "SEO Agent Mission Creation & Discovery",
+      "status": "PASSED",
+      "details": "Mission: mission_seo_1788945502475_5kr1, Keywords: 5, Content Opps: 2",
+      "durationMs": 203
+    },
+    {
+      "testId": "TEST D",
+      "name": "Content Generation Campaign Mission",
+      "status": "PASSED",
+      "details": "Mission: mission_content_1788945502679_j5p7, 3 Drafts: [LinkedIn, Instagram, X / Twitter], Staged safely without auto-publishing",
+      "durationMs": 768
+    },
+    {
+      "testId": "TEST E",
+      "name": "Real Image Generation Pipeline",
+      "status": "PASSED",
+      "details": "Generated JPEG binary: 63302 bytes, Signed URL with HMAC & 24h TTL verified",
+      "durationMs": 335
+    },
+    {
+      "testId": "TEST F",
+      "name": "Action-Button Payload Generation & Action Routing",
+      "status": "PASSED",
+      "details": "All 5 Action UI buttons routed and executed cleanly: [5 actions]",
+      "durationMs": 2
+    },
+    {
+      "testId": "TEST G",
+      "name": "Mission Cancellation & Retry Flow",
+      "status": "PASSED",
+      "details": "Cancel and Retry commands successfully routed and confirmed in mission control",
+      "durationMs": 1
+    },
+    {
+      "testId": "TEST H",
+      "name": "Supabase Durable Mission & Artifact Persistence",
+      "status": "PASSED",
+      "details": "Verified Supabase state: 1 recent missions found (latest: custom_mission in state COMPLETED). Artifacts: 1, Sites: 2.",
+      "durationMs": 160
+    },
+    {
+      "testId": "TEST I",
+      "name": "Worker Fleet Execution & Health Check",
+      "status": "PASSED",
+      "details": "Worker fleet status: HEALTHY, Healthy workers: 4",
+      "durationMs": 0
+    },
+    {
+      "testId": "TEST J",
+      "name": "Security Probes: HMAC, Tenant Isolation, Zero Secret Leakage",
+      "status": "PASSED",
+      "details": "HMAC verification: Verified, Tenant isolation: Verified, Secret leakage: None",
+      "durationMs": 2
+    }
+  ]
+}

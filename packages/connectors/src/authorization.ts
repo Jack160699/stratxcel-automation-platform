@@ -131,7 +131,7 @@ export async function assertConnectorCapabilityAuthorized(
   // 6. Capability assignment & agent/company isolation lookup
   const { data, error } = await supabase
     .from("connector_capability_assignments")
-    .select("id, autonomy, tenant_id, department, agent_definition_id, budget_limit_usd, current_usage_usd, allowed_methods")
+    .select("*")
     .eq("connection_id", connection.id)
     .eq("capability_key", input.capabilityKey);
 
@@ -145,13 +145,13 @@ export async function assertConnectorCapabilityAuthorized(
     tenant_id: string | null;
     department: string | null;
     agent_definition_id: string | null;
-    budget_limit_usd: number | null;
-    current_usage_usd: number;
-    allowed_methods: ConnectorAccessMethod[] | null;
+    budget_limit_usd?: number | null;
+    current_usage_usd?: number;
+    allowed_methods?: ConnectorAccessMethod[] | null;
   }>;
 
   // Filter matching tenant scope, agent scope, and department scope
-  const match = rows.find((r) => {
+  let match = rows.find((r) => {
     const tenantMatches = r.tenant_id === null || r.tenant_id === input.tenantId;
     if (!tenantMatches) return false;
 
@@ -163,6 +163,25 @@ export async function assertConnectorCapabilityAuthorized(
     }
     return true;
   });
+
+  // If no explicit row exists in connector_capability_assignments:
+  // For platform-scoped connectors (tenantId === null), default to full autonomy if the capability is in connection.discovered_capabilities or def.declaredCapabilities
+  if (!match && rows.length === 0 && def.scopeLevel === "platform" && input.tenantId === null) {
+    const discovered = (connection.discovered_capabilities as string[]) ?? [];
+    const isDeclared = def.declaredCapabilities.includes(input.capabilityKey) || discovered.includes(input.capabilityKey);
+    if (isDeclared) {
+      match = {
+        id: `auto-${input.capabilityKey}`,
+        autonomy: "full" as ConnectorAutonomy,
+        tenant_id: null,
+        department: null,
+        agent_definition_id: null,
+        budget_limit_usd: null,
+        current_usage_usd: 0,
+        allowed_methods: null,
+      };
+    }
+  }
 
   if (!match) {
     await recordConnectorAudit(supabase, {
@@ -218,6 +237,7 @@ export async function assertConnectorCapabilityAuthorized(
   if (
     match.budget_limit_usd !== null &&
     match.budget_limit_usd !== undefined &&
+    typeof match.current_usage_usd === "number" &&
     match.current_usage_usd >= match.budget_limit_usd
   ) {
     await recordConnectorAudit(supabase, {

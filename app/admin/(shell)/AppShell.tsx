@@ -12,6 +12,7 @@ import { AdminViewModeSegmented } from "@/components/admin/shell/AdminViewModeSe
 import { AdminChannelSelector } from "@/components/admin/shell/AdminChannelSelector";
 import { AdminFounderMenu } from "@/components/admin/shell/AdminFounderMenu";
 import { AdminThemeButton } from "@/components/admin/shell/AdminThemeButton";
+import { FounderNotificationBell } from "@/components/admin/shell/FounderNotificationBell";
 import type { AdminViewMode } from "@/lib/release/admin-view-mode-filter";
 import { ClientSwitcher } from "./ClientSwitcher";
 import { ContextSwitcher } from "@/components/shell/ContextSwitcher";
@@ -41,6 +42,16 @@ export function AppShell({
   const mobileNavItems = getAdminMobileNav(betaEnabled, viewMode);
   const activeKey = resolveAdminActiveKey(pathname, betaEnabled, viewMode);
 
+  // StratXcel Office owns the entire viewport (100vw x 100vh) without admin sidebar or chrome
+  const isOffice = pathname === "/admin/office";
+  if (isOffice) {
+    return (
+      <main className="fixed inset-0 z-50 h-screen w-screen overflow-hidden bg-[#06080d]">
+        {children}
+      </main>
+    );
+  }
+
   return (
     <CoreAppShell
       product="Admin"
@@ -61,6 +72,7 @@ export function AppShell({
       userMenu={
         <div className="flex items-center gap-2">
           <ContextSwitcher currentContext="admin" compact />
+          <FounderNotificationBell />
           <AdminThemeButton />
           <AdminFounderMenu email={email} />
         </div>

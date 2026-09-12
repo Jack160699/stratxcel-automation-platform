@@ -131,10 +131,15 @@ export async function createConnectorConnection(
 function normalizeConnectionRow(row: ConnectorConnectionRow | null): ConnectorConnectionRow | null {
   if (!row) return null;
   let meta = (row as any).metadata;
-  if ((!meta || Object.keys(meta).length === 0) && typeof row.encrypted_secret_ref === "string" && row.encrypted_secret_ref.startsWith("fc-meta:")) {
-    try {
-      meta = JSON.parse(row.encrypted_secret_ref.slice("fc-meta:".length));
-    } catch {}
+  if ((!meta || Object.keys(meta).length === 0) && typeof row.encrypted_secret_ref === "string") {
+    for (const prefix of ["fc-meta:", "aws-meta:", "meta:"]) {
+      if (row.encrypted_secret_ref.startsWith(prefix)) {
+        try {
+          meta = JSON.parse(row.encrypted_secret_ref.slice(prefix.length));
+          break;
+        } catch {}
+      }
+    }
   }
   return {
     ...row,
@@ -348,8 +353,15 @@ export async function retrieveConnectorSecret(supabase: ServiceClient, connectio
   if (error) throw new Error(`retrieveConnectorSecret: ${error.message}`);
   const ref = (data as { encrypted_secret_ref: string | null } | null)?.encrypted_secret_ref;
   if (!ref) return null;
-  const vault = createDevEncryptedVault(supabase as never);
-  return vault.retrieve(ref);
+  if (ref.startsWith("meta:") || ref.startsWith("fc-meta:") || ref.startsWith("aws-meta:")) {
+    return null;
+  }
+  try {
+    const vault = createDevEncryptedVault(supabase as never);
+    return await vault.retrieve(ref);
+  } catch {
+    return null;
+  }
 }
 
 export async function createCapabilityAssignment(
@@ -365,7 +377,7 @@ export async function createCapabilityAssignment(
     allowedMethods?: ConnectorAccessMethod[] | null;
   }
 ): Promise<ConnectorCapabilityAssignmentRow> {
-  const { data, error } = await supabase
+  let insertRes = await supabase
     .from("connector_capability_assignments")
     .insert({
       connection_id: input.connectionId,
@@ -380,9 +392,24 @@ export async function createCapabilityAssignment(
     })
     .select("*")
     .single();
-  if (error) throw new Error(`createCapabilityAssignment: ${error.message}`);
 
-  const row = data as ConnectorCapabilityAssignmentRow;
+  if (insertRes.error && isMissingColumnError(insertRes.error)) {
+    insertRes = await supabase
+      .from("connector_capability_assignments")
+      .insert({
+        connection_id: input.connectionId,
+        capability_key: input.capabilityKey,
+        tenant_id: input.tenantId,
+        department: input.department ?? null,
+        agent_definition_id: input.agentDefinitionId ?? null,
+        autonomy: input.autonomy,
+      })
+      .select("*")
+      .single();
+  }
+
+  if (insertRes.error) throw new Error(`createCapabilityAssignment: ${insertRes.error.message}`);
+  const row = insertRes.data as ConnectorCapabilityAssignmentRow;
   await recordConnectorAudit(supabase, {
     connectorKey: "capability_assignment",
     connectionId: input.connectionId,

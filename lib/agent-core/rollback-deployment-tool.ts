@@ -27,6 +27,7 @@
  */
 import type { AgentTool } from "@stratxcel/agent-core";
 import { listVercelDeployments, promoteVercelDeployment } from "@stratxcel/search-discovery";
+import { resolveVercelToken } from "@stratxcel/websites-and-domains";
 
 export const ROLLBACK_DEPLOYMENT_TOOL: AgentTool = {
   schema: {
@@ -48,7 +49,7 @@ export const ROLLBACK_DEPLOYMENT_TOOL: AgentTool = {
     const deploymentId = typeof args.deploymentId === "string" ? args.deploymentId.trim() : "";
     if (!deploymentId) return { outcome: "FAILED", reason: "missing_deployment_id" };
 
-    const token = process.env.VERCEL_AUTH_TOKEN;
+    const token = resolveVercelToken();
     if (!token) return { outcome: "FAILED", reason: "VERCEL_AUTH_TOKEN is not configured" };
     const projectId = process.env.VERCEL_PROJECT_ID || "prj_81j5A5rArsPVVNspwSPGGfuhg9NZ";
 

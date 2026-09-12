@@ -12,6 +12,7 @@
     "@stratxcel/missions": "*",
     "@stratxcel/payments-and-wallet": "*",
     "@stratxcel/queue": "*",
+    "@stratxcel/revenue-ops": "*",
     "@supabase/supabase-js": "^2.110.7"
   }
 }

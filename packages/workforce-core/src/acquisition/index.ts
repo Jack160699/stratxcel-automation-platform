@@ -47,3 +47,13 @@ export {
   assessPaidAdsForAudit,
   signalsFromBusinessContext,
 } from "./audit-assessment.ts";
+
+// Universal Lead Acquisition & Enrichment Engine
+export * from "./types.ts";
+export * from "./identity-resolver.ts";
+export * from "./data-priority-merger.ts";
+export * from "./qualification-engine.ts";
+export * from "./outreach-gatekeeper.ts";
+export * from "./adapters/index.ts";
+export * from "./universal-lead-engine.ts";
+export * from "./email-outreach.ts";

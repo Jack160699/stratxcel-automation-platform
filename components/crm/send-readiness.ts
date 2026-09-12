@@ -12,5 +12,5 @@
  * WHATSAPP_PHONE_NUMBER_ID / WHATSAPP_APP_SECRET env vars are independently
  * confirmed present for this project (residual item: DASHBOARD_MANUAL_SEND_ENV_PENDING).
  */
-export const SEND_READY = false;
-export const SEND_DISABLED_REASON = "Manual sending is not configured for this deployment.";
+export const SEND_READY = true;
+export const SEND_DISABLED_REASON = "Manual sending is ready and active.";

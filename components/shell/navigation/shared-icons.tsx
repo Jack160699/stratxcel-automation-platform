@@ -20,6 +20,9 @@ import {
   ListOrdered,
   Activity,
   UserCheck,
+  Building2,
+  Inbox,
+  Zap,
 } from "lucide-react";
 
 /**
@@ -41,7 +44,7 @@ export const NAV_ICONS: Record<string, ReactNode> = {
   home: <GridIcon />,
   overview: <GridIcon />,
   copilot: <CopilotIcon />,
-  missions: <DocIcon />,
+  missions: <ZapIcon />,
   approvals: <CheckIcon />,
   content: <MegaphoneIcon />,
   brand: <SparkIcon />,
@@ -70,7 +73,13 @@ export const NAV_ICONS: Record<string, ReactNode> = {
   capabilities: <DocIcon />,
   connectors: <PlugIcon />,
   "personal-connectors": <UserCheckIcon />,
+  office: <OfficeIcon />,
+  inbox: <InboxIcon />,
 };
+
+export function OfficeIcon() {
+  return <Building2 size={ICON_SIZE} strokeWidth={ICON_STROKE} />;
+}
 
 export function UserCheckIcon() {
   return <UserCheck size={ICON_SIZE} strokeWidth={ICON_STROKE} />;
@@ -132,4 +141,10 @@ export function QueueIcon() {
 }
 export function PulseIcon() {
   return <Activity size={ICON_SIZE} strokeWidth={ICON_STROKE} />;
+}
+export function InboxIcon() {
+  return <Inbox size={ICON_SIZE} strokeWidth={ICON_STROKE} />;
+}
+export function ZapIcon() {
+  return <Zap size={ICON_SIZE} strokeWidth={ICON_STROKE} />;
 }

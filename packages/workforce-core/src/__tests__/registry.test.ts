@@ -7,8 +7,8 @@ import { CAPABILITY_KEYS } from "../capabilities/types.ts";
 import { getCapability, listCapabilities } from "../capabilities/registry.ts";
 
 function run() {
-  assert.equal(DEPARTMENT_KEYS.length, 25);
-  assert.equal(listDepartments().length, 25);
+  assert.equal(DEPARTMENT_KEYS.length, 26);
+  assert.equal(listDepartments().length, 26);
 
   for (const key of DEPARTMENT_KEYS) {
     const roles = listRolesForDepartment(key);

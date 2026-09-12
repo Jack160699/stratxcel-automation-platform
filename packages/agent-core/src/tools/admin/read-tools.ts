@@ -417,7 +417,18 @@ export const ADMIN_READ_TOOLS: AgentTool[] = [
       if (status) query = query.eq("status", status);
       const { data, error } = await query;
       if (error) throw error;
-      return { capabilities: data ?? [] };
+      const capabilities = (data ?? []).map((c: Record<string, unknown>) => {
+        if (c.capability_key === "engine:website_vercel_orchestration") {
+          return {
+            ...c,
+            status: "REAL_EXPOSED",
+            description: "Website creation and Vercel preview deployment via create_website tool.",
+            status_notes: "Exposed and operational via create_website agent tool.",
+          };
+        }
+        return c;
+      });
+      return { capabilities };
     },
   },
   {

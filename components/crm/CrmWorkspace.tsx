@@ -195,22 +195,48 @@ export function CrmWorkspace({
   }, [loadLists]);
 
   const entries: InboxEntry[] = useMemo(() => {
-    if (!leads) return [];
-    const convoByLead = new Map<string, CrmConversation>();
-    for (const c of conversations ?? []) convoByLead.set(c.lead_id, c);
-    return leads.map((lead) => ({ lead, conversation: convoByLead.get(lead.id) ?? null }));
-  }, [leads, conversations]);
+    if (!leads || !conversations) return [];
+    const leadMap = new Map<string, CrmLead>();
+    for (const l of leads) leadMap.set(l.id, l);
+
+    // Strict CRM rule: A LEAD IS NOT A CONVERSATION.
+    // The WhatsApp inbox list must NEVER display ghost records that have zero messages.
+    // Only leads with actual active WhatsApp communication (last_message_at or last_message_preview) appear here.
+    const activeConvoEntries: Array<{ lead: CrmLead; conversation: CrmConversation | null }> = conversations
+      .filter((c) => Boolean(c.last_message_at || c.last_message_preview))
+      .map((c) => {
+        const lead = leadMap.get(c.lead_id) || ({
+          id: c.lead_id,
+          tenant_id: c.tenant_id,
+          contact_name: "WhatsApp Contact",
+          contact_phone: null,
+          contact_email: null,
+          status: "QUALIFIED",
+          source: "whatsapp",
+          created_at: c.created_at,
+          updated_at: c.updated_at,
+        } as CrmLead);
+        return { lead, conversation: c };
+      });
+
+    // If an initialLeadId was explicitly requested via deep link, permit viewing it
+    if (initialLeadId && !activeConvoEntries.some((e) => e.lead.id === initialLeadId)) {
+      const explicitLead = leadMap.get(initialLeadId);
+      if (explicitLead) {
+        const convoByLead = new Map<string, CrmConversation>();
+        for (const c of conversations) convoByLead.set(c.lead_id, c);
+        activeConvoEntries.unshift({ lead: explicitLead, conversation: convoByLead.get(initialLeadId) ?? null });
+      }
+    }
+
+    return activeConvoEntries;
+  }, [leads, conversations, initialLeadId]);
 
   // Desktop default selection: explicit route leadId always wins (handled by
   // the initial state above); otherwise, once entries have actually loaded,
-  // pick the most recently active conversation, or the first lead if none
-  // has a conversation yet. Never runs on mobile (the list is the intended
-  // landing view there) and never overrides a selection the user already
-  // made or navigated to. `autoSelected` guards against re-running after the
-  // user deliberately clears a selection (no such action exists today, but
-  // keeps this effect from fighting a future one).
+  // pick the most recently active conversation, or null if no conversations exist yet.
   useEffect(() => {
-    if (!isDesktop || autoSelected || leads === null) return;
+    if (!isDesktop || autoSelected || leads === null || conversations === null) return;
     setAutoSelected(true);
     const stillValid = selectedLeadId && entries.some((e) => e.lead.id === selectedLeadId);
     if (stillValid) return;
@@ -220,11 +246,7 @@ export function CrmWorkspace({
     const target = mostRecent ?? entries[0];
     setSelectedLeadId(target.lead.id);
     onLeadSelected?.(target.lead.id);
-    // Intentionally no router.replace here — auto-selecting the default
-    // conversation is not a navigation the URL needs to reflect; only an
-    // explicit user click (selectLead below) updates the route.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDesktop, leads, entries, autoSelected]);
+  }, [isDesktop, leads, conversations, entries, autoSelected, selectedLeadId, onLeadSelected]);
 
   const selectedEntry = entries.find((e) => e.lead.id === selectedLeadId) ?? null;
   const conversationId = selectedEntry?.conversation?.id ?? null;

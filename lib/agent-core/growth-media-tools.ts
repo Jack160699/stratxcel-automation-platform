@@ -79,6 +79,7 @@
  *   check_growth_status -- never invents a mutation from free text.
  */
 import { listSearchState, executeSearchAction, createFixtureWordPressProvider, createStratxcelNativeCMSProvider, createVercelCMSProvider, resolveVercelWriteCapability, runSearchAnalysis, resolveGoogleProviderStates, stableFingerprint, CRAWL_LIMITS, normalizeWebsiteInput, listVercelDeployments, type RuntimePlan, type ProviderConnection } from "@stratxcel/search-discovery";
+import { resolveVercelToken } from "@stratxcel/websites-and-domains";
 import { loadIntegrationsStatusData } from "../connectors/load-integrations-data";
 import { executeGenerateImageTool } from "../social/agent/generate-image-tool";
 import type { AgentTenantContext } from "../social/agent-tenant-types";
@@ -229,7 +230,7 @@ export const GROWTH_MEDIA_TOOLS: AgentTool[] = [
   {
     schema: {
       name: "check_website_status",
-      description: "Real, currently-stored Stratxcel-built websites for a tenant -- name, slug, status (draft/live/etc.), custom domain, framework, template, and timestamps. The exact same data and columns the Website page's list reads. Use for 'what's the status of our website', 'is our domain connected', 'do we have a website yet'. Read-only -- for editing a website's content, use edit_website with the id this returns; if no website exists yet and one is wanted, use create_website (Founder-only) instead.",
+      description: "Real, currently-stored Stratxcel-built websites for a tenant -- name, slug, status (draft/live/etc.), custom domain, framework, template, and timestamps. The exact same data and columns the Website page's list reads. Use for 'what's the status of our website', 'is our domain connected', 'do we have a website yet'. Read-only -- to build a new website from scratch, use create_website (Founder-only; an existing site project is NOT required). For editing, use edit_website with the id this returns.",
       parameters: {
         type: "object",
         properties: { tenantId: { type: "string", description: "Optional -- a specific client's tenant id. Defaults to Stratxcel's own." } },
@@ -243,11 +244,16 @@ export const GROWTH_MEDIA_TOOLS: AgentTool[] = [
       if (!tenantId) return { available: false, reason: "no_tenant_resolved" };
       const { data: sites, error } = await ctx.supabase
         .from("site_projects")
-        .select("id, tenant_id, name, slug, status, custom_domain, framework, template, created_at, updated_at")
+        .select("id, tenant_id, name, slug, status, custom_domain, template_id, created_at, updated_at")
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false });
       if (error) return { available: false, reason: error.message };
-      return { tenantId, sites: sites ?? [] };
+      const normalizedSites = (sites ?? []).map((s: Record<string, unknown>) => ({
+        ...s,
+        template: s.template_id,
+        framework: "nextjs",
+      }));
+      return { tenantId, sites: normalizedSites };
     },
   },
   {
@@ -286,7 +292,7 @@ export const GROWTH_MEDIA_TOOLS: AgentTool[] = [
     risk: "read",
     requiredPermission: "agent:read:website",
     async execute(_ctx, args) {
-      const token = process.env.VERCEL_AUTH_TOKEN;
+      const token = resolveVercelToken();
       if (!token) return { available: false, reason: "VERCEL_AUTH_TOKEN is not configured" };
       const limit = typeof args.limit === "number" ? Math.min(Math.max(args.limit, 1), 20) : 5;
       const projectId = process.env.VERCEL_PROJECT_ID || "prj_81j5A5rArsPVVNspwSPGGfuhg9NZ";

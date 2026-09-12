@@ -165,7 +165,7 @@ export default function OperationsPage() {
               href="/admin/audit-requests"
               className="flex items-center gap-1.5 rounded-lg border border-sx-border/80 bg-sx-surface-2 px-3 py-1.5 text-xs font-medium text-sx-text hover:bg-sx-surface-1"
             >
-              <span>Audit Delivery</span>
+              <span>Open Audit Delivery</span>
               <ArrowRight size={12} />
             </Link>
             <button
@@ -241,7 +241,7 @@ export default function OperationsPage() {
                     key={job.id}
                     icon={<RotateCcw size={15} className="text-rose-400" />}
                     title={`Failed job · ${job.job_type}`}
-                    subtitle={`Attempts ${job.attempt_count}/${job.max_attempts} · Queued work paused`}
+                    subtitle={`Impact: queued work cannot continue · age ${age(job.scheduled_at)} · Evidence: ${job.id.slice(0, 8)}…`}
                     timestamp={age(job.scheduled_at)}
                     status={<AdminStatusDot status="error" customLabel="Failed" />}
                     primaryAction={
@@ -279,7 +279,7 @@ export default function OperationsPage() {
                     key={m.id}
                     icon={<ShieldAlert size={15} className="text-amber-400" />}
                     title={`Blocked work · ${m.goal_text}`}
-                    subtitle={`State: ${m.state} · Outcome paused`}
+                    subtitle={`Impact: customer outcome is paused · age ${age(m.updated_at)} · Evidence: ${m.id.slice(0, 8)}…`}
                     timestamp={age(m.updated_at)}
                     status={<AdminStatusDot status="error" customLabel={m.state} />}
                     primaryAction={
@@ -311,7 +311,7 @@ export default function OperationsPage() {
                     key={h.id}
                     icon={<Inbox size={15} className="text-amber-400" />}
                     title={`Human decision required · ${h.reason}`}
-                    subtitle={`State: ${h.status} · Linked work paused`}
+                    subtitle={`Impact: linked work is paused · age ${age(h.created_at)} · Evidence: ${h.id.slice(0, 8)}…`}
                     timestamp={age(h.created_at)}
                     status={<AdminStatusDot status="needs_attention" customLabel={h.status} />}
                     primaryAction={
@@ -343,7 +343,7 @@ export default function OperationsPage() {
                     key={a.id}
                     icon={<Inbox size={15} className="text-sx-accent" />}
                     title={`Approval waiting · ${a.kind}`}
-                    subtitle="Consequential action remains paused pending review"
+                    subtitle={`Impact: consequential action remains paused · age ${age(a.created_at)} · Evidence: ${a.id.slice(0, 8)}…`}
                     timestamp={age(a.created_at)}
                     status={<AdminStatusDot status="waiting" customLabel="Waiting Review" />}
                     primaryAction={
