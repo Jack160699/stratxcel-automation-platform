@@ -1,5 +1,84 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 100 — Giri Tours & Travels public-website recovery: real finding, honest scope — the site is genuinely live at a real URL, just not the branded preview subdomain the DB promises
+
+A new "master execution mission" arrived naming Giri Tours and Travels as the
+controlled test case for public-website deployment (mission Section 6/54).
+Investigated the real state before changing anything, per this repo's own
+standing discipline.
+
+**What's real:** `https://stratxcel.in/site/giri-tours-and-travels` is
+genuinely, externally reachable right now — verified via an anonymous fetch
+from outside this session's own tooling (not localhost, not an
+authenticated internal route): real rendered content ("Reliable Car Rental
+& Outstation Cabs in Bhilai 3", full nav, real copy), not a 404 or login
+wall. This is
+[`app/site/[domain]/[[...slug]]/page.tsx`](../../app/site/%5Bdomain%5D/%5B%5B...slug%5D%5D/page.tsx) —
+a real, already-deployed, service-role Supabase lookup by
+`custom_domain`/`slug`/`preview_subdomain`, `force-dynamic`. It renders
+whichever `site_projects` row matches the path segment.
+
+**What's false:** `site_projects.preview_subdomain` stores
+`<slug>.stratxcel.site` for every generated site (including all 3 Giri
+Tours rows), but `stratxcel.site` is not a registered/configured domain
+anywhere — not on the real `stratxcel` Vercel project's domain list
+(confirmed via Vercel MCP `get_project`: only `stratxcel.in` and its
+`.vercel.app` aliases are attached), not in Cloudflare. External DNS lookup
+confirms `ENOTFOUND` for `giri-tours-and-travels.stratxcel.site`. No
+middleware.ts exists in this repo to rewrite an incoming hostname to
+`/site/<slug>` even if the domain did resolve. So the "clean" branded
+preview link the product promises does not exist; the only real public link
+today is the `/site/<slug>` path under the platform's own `stratxcel.in`
+domain.
+
+**A related stub, found tracing why "deploy" never produces a real
+custom/preview domain:** both
+[`VercelHostingProvider.deploy()`](../../packages/websites-and-domains/src/hosting/vercel.ts)
+and
+[`SandboxHostingProvider.deploy()`](../../packages/websites-and-domains/src/hosting/sandbox.ts)
+return a hardcoded `{success:true, ...}` without calling any real Vercel
+deploy/build API — only `getDeploymentStatus`/`assignCustomDomain`/
+`getDomainStatus`/`redeploy`/`inspectPermissions` on the Vercel provider are
+real. This matches (does not contradict) the existing
+`engine:website_vercel_orchestration` registry row, whose own notes already
+say "Deploy TRIGGER (creating a brand-new build from source) remains out of
+scope." `HOSTING_PROVIDER_MODE` was not found set to `"live"` in any real
+config in this repo — `select.ts` defaults it to `sandbox`/`disabled`.
+
+**A data-integrity bug found and fixed (DB correction only, no code
+change):** `site_projects` id `13226cb5` (slug `giri-tours-and-travels`) had
+`status='live'` while `deployment_status` stayed `'NOT_STARTED'` and
+`production_url` was `null` — an impossible combination the real domain-verify
+route
+([`app/api/platform/website-factory/[projectId]/domains/[domainId]/verify/route.ts`](../../app/api/platform/website-factory/%5BprojectId%5D/domains/%5BdomainId%5D/verify/route.ts))
+always sets atomically together (`status`+`deployment_status`+
+`production_url`+`ssl_status` in one update, gated on real domain
+verification). `lib/websites/create-tenant-website.ts` (the Founder-WhatsApp
+`create_website` path) always sets `preview_ready`, never `live` — exact
+root cause of how this row got to `live` not traced with certainty in this
+pass (possibly a manual/test-session SQL edit from an earlier session).
+Corrected the row back to `preview_ready` via a guarded `UPDATE ... WHERE
+deployment_status='NOT_STARTED' AND production_url IS NULL AND
+status='live'` so a real live row could never be touched by accident. Also
+noted: 3 duplicate "Giri Tours and Travels" `site_projects` rows exist under
+the same tenant — `create_website` has no dedup-by-business-name, so
+repeated Founder requests for the same business each create a fresh row
+rather than updating one; not fixed this pass (needs a product decision on
+the right dedup key — name+tenant? slug collision only?).
+
+**Registered:** `capability:website_preview_subdomain_unregistered`,
+`EXTERNAL_REQUIRED` (a real domain/spend decision — register and wire a
+real wildcard preview domain into Vercel/Cloudflare — is the blocker, not
+missing code discipline).
+
+**Not attempted this pass, and why:** buying/configuring a real wildcard
+domain, writing `HOSTING_PROVIDER_MODE=live` to production, implementing a
+real `VercelHostingProvider.deploy()`, and building the hostname-rewrite
+middleware are all real, separate engineering/infrastructure/spend
+decisions — each individually reversible-but-nontrivial, none of them safe
+to do silently in one pass without the Founder's explicit go-ahead on the
+domain/spend question specifically.
+
 ## Update 99 — Free Audit stuck in production: root-caused and fixed generically (not a MedRoute-specific patch), stuck run recovered and live-verified
 
 Live-caught, not theoretical: a real MedRoute Consultancy audit
