@@ -1,5 +1,107 @@
 # WhatsApp AI Agency — Gap Audit
 
+## Update 101 — origin/main had genuinely diverged (~18 commits, a whole revenue-ops/workforce-core subsystem) and its own `create_website` tool was a live production fabrication engine; merged and fixed
+
+Following Update 100's Giri Tours investigation, checked whether
+`release/stratxcel-final` (this branch) actually matched what's deployed.
+It did not: `https://stratxcel.in/api/health` reports commit `17f19ae`,
+which is `origin/main`'s tip, not this branch's. `git merge-base
+--is-ancestor` confirmed a true divergence (not a fast-forward) — main had
+~18 commits this branch never had: a new `packages/revenue-ops` (WhatsApp
+sales engine, partner commissions, business diagnosis), a new
+`packages/workforce-core` acquisition/lead-discovery/continuous-revenue
+subsystem, a Pixel Office admin UI, mission control, an `antigravity-worker`
+app, Google connector OAuth work, and WhatsApp/CRM truthfulness fixes.
+Confirmed via `whatsapp_messages`/`crm_leads`: this system had already run
+for real once — 2026-09-11, ~10:15-10:16 UTC, 20 real outbound sends (9
+failed, 9 read, 2 delivered) and 16 real inbound replies — then went silent
+(nothing since). Founder chose: merge main in now, keep the real preview
+link as `stratxcel.in/site/<slug>` for now (no domain spend yet), and
+separately asked to diagnose why the revenue loop stopped.
+
+**Merged `origin/main` into `release/stratxcel-final`** (commit `6343824`,
+on top of Update 100's `67e10c5`). Two real conflicts, both in
+`lib/agent-core/`:
+
+- `growth-media-tools.ts`: trivial — both sides had edited the same
+  `check_website_status` description string. Kept the more accurate
+  wording (mentions `create_website` explicitly).
+- `website-tools.ts`: **not trivial.** Both branches had independently built
+  a `create_website` AgentTool with the same name, unaware of each other —
+  this branch's e06fe3b (2026-09-09) used the real, mature dashboard AI
+  generation pipeline (`lib/websites/create-tenant-website.ts`); main's
+  (`5c984a2`, "finalize hermes founder automation release") used a NEW
+  function, `initiateWebsiteCreation`
+  (`packages/connectors/src/resources/website-creator.ts`). Read that
+  function fully before resolving the conflict. **It is a real, live,
+  production fabrication engine**, not a stub that fails honestly:
+  - Writes a `missions` row straight to `state: "COMPLETED"` and a
+    `mission_events` row claiming `"status": "Preview generated and ready
+    for inspection", "progress": 100` — always, regardless of whether
+    anything was actually built.
+  - Returns a `previewUrl: https://<slug>.vercel.app` and a fabricated
+    `github.repoName` (`Jack160699/<slug>-<id>`) — no Vercel project is
+    ever created for that slug and no GitHub API call is ever made
+    anywhere in the file to create that repo.
+  - `createWebsiteProjectShell` inserts a `site_projects` row with every
+    page's `sections` empty (`[]`) — no AI content generation ever runs.
+  - `advanceWebsiteLifecycle`'s `LIVE` branch unconditionally returns `"✅
+    Website successfully deployed to production!"` with a
+    `https://<project>.stratxcel.com` URL (a THIRD unregistered domain,
+    different from both `stratxcel.site` and `stratxcel.in`) — again, no
+    real deploy call.
+  - `modifyWebsiteProject` (used for any follow-up edit request) ignores
+    its own `tenantId`/request content entirely and always regenerates a
+    hardcoded "Solara Green Energy" solar-installer page via
+    `generateWebsiteHtml`, then really deploys THAT to Vercel via
+    `deployStandaloneVercelWebsite` — real API calls, but for content
+    completely unrelated to whatever business actually asked. This is the
+    real explanation for the `solara-*` Vercel projects found in Update 100
+    (`solara-solara-green-preview`, `solara-test-solar-mttvqsiu`,
+    `solara-solara-green-mttv01s8`) — they are this fixture, not real
+    customer sites.
+  - **Live-caused, not theoretical**: `site_projects`
+    `giri-tours-and-travels-etja3` (status `draft`, all pages empty,
+    created 2026-09-12) matches `createWebsiteProjectShell`'s exact shell
+    shape byte-for-byte — a real Founder WhatsApp "build a website for Giri
+    Tours" request went through this fabricating path in production and
+    almost certainly received one of the canned "✅ ... ready" replies
+    above.
+
+  This is exactly Section 2/59's "zero false green" failure mode, live, on
+  the Founder's own production WhatsApp channel. **Resolved the conflict by
+  keeping only this branch's real `create_website`** (the
+  `createTenantWebsite`-backed one) and removing main's fabricating
+  registration + its import — a duplicate tool name is itself a bug
+  regardless of which side "wins," and the real implementation already
+  existed. Left an explicit code comment naming the fabrication and this
+  entry, since the underlying `initiateWebsiteCreation` function itself
+  (and `advanceWebsiteLifecycle`/`modifyWebsiteProject`/
+  `deployStandaloneVercelWebsite`) still exist in
+  `packages/connectors/src/resources/website-creator.ts` and are still
+  referenced by `apps/hermes-gateway/src/tool-handlers.ts` and
+  `packages/connectors/src/resources/core-mcp-router.ts` — dormant today
+  only because `HERMES_MODE` is disabled. **Not deleted or rewritten this
+  pass** — that's real, separate follow-up work (either delete the
+  fabricating functions entirely, or make them honestly call the real
+  pipeline) that shouldn't be rushed inside a merge-conflict resolution;
+  flagged here so it's not silently reactivated if `HERMES_MODE` is ever
+  turned on.
+
+  Verified after resolving: zero leftover conflict markers repo-wide, full
+  `npm install` (one new dependency from main, `exceljs`, resolved cleanly),
+  full-repo `tsc --noEmit` clean, real `NODE_ENV=production npm run build`
+  — "Compiled successfully", zero errors.
+
+**Not yet done, deliberately**: a full audit of the other ~200 changed
+files from main (revenue-ops, workforce-core, Pixel Office, mission
+control, antigravity-worker) — verifying each subsystem's own honesty
+claims is real, separate work, not assumed clean just because the build
+passes. Pushed to both branches per this repo's standing discipline; next
+session should treat `main`'s existing capability_registry rows (if any
+were added there) as the starting point for that audit, not re-derive from
+scratch.
+
 ## Update 100 — Giri Tours & Travels public-website recovery: real finding, honest scope — the site is genuinely live at a real URL, just not the branded preview subdomain the DB promises
 
 A new "master execution mission" arrived naming Giri Tours and Travels as the
