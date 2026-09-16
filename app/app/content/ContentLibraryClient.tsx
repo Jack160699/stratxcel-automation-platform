@@ -302,6 +302,14 @@ export function ContentLibraryClient({
           <span className="text-[11px] text-sx-text-subtle">Scheduled schedule</span>
         </Link>
         <Link
+          href="/app/content/campaigns"
+          className="flex flex-col rounded-sx-md border border-sx-border bg-sx-surface-1 p-3.5 transition-colors hover:border-sx-accent/40"
+        >
+          <span className="mb-2 flex h-8 w-8 items-center justify-center rounded-sx-sm bg-sky-500/10 text-base">📣</span>
+          <span className="text-[13px] font-bold text-sx-text">Campaigns</span>
+          <span className="text-[11px] text-sx-text-subtle">Assets & Instagram status</span>
+        </Link>
+        <Link
           href="/app/content/pipeline"
           className="flex flex-col rounded-sx-md border border-sx-border bg-sx-surface-1 p-3.5 transition-colors hover:border-sx-accent/40"
         >

@@ -27,6 +27,62 @@ function requireEnv(name: string): string {
   return v;
 }
 
+export interface InstagramMedia {
+  id: string;
+  caption?: string;
+  permalink?: string;
+  timestamp?: string;
+  username?: string;
+  media_type?: string;
+}
+
+const MEDIA_FIELDS = "id,caption,permalink,timestamp,username,media_type";
+
+/** Reads a media object back from Instagram -- the provider's own confirmation that a post exists. */
+export async function fetchInstagramMedia(accessToken: string, mediaId: string): Promise<InstagramMedia> {
+  const params = new URLSearchParams({ fields: MEDIA_FIELDS, access_token: accessToken });
+  const res = await fetch(`${IG_GRAPH}/${GRAPH_VERSION}/${encodeURIComponent(mediaId)}?${params.toString()}`);
+  if (!res.ok) throw await toMetaApiError(res, "Instagram media lookup");
+  return (await res.json()) as InstagramMedia;
+}
+
+/** Most recent media on the account, newest first. Used to detect an already-published post before publishing again. */
+export async function listRecentInstagramMedia(accessToken: string, igUserId: string, limit = 50): Promise<InstagramMedia[]> {
+  const params = new URLSearchParams({ fields: MEDIA_FIELDS, limit: String(limit), access_token: accessToken });
+  const res = await fetch(`${IG_GRAPH}/${GRAPH_VERSION}/${encodeURIComponent(igUserId)}/media?${params.toString()}`);
+  if (!res.ok) throw await toMetaApiError(res, "Instagram recent media");
+  const body = (await res.json()) as { data?: InstagramMedia[] };
+  return body.data ?? [];
+}
+
+export interface InstagramPublishingLimit {
+  quotaUsage: number;
+  quotaTotal: number;
+  quotaDurationSeconds: number | null;
+}
+
+/**
+ * The account's real API publishing quota for the current rolling window.
+ * Requires instagram_business_content_publish, so a successful read is also
+ * live proof that the stored token carries the publishing permission.
+ */
+export async function fetchInstagramPublishingLimit(accessToken: string, igUserId: string): Promise<InstagramPublishingLimit> {
+  const params = new URLSearchParams({ fields: "config,quota_usage", access_token: accessToken });
+  const res = await fetch(`${IG_GRAPH}/${GRAPH_VERSION}/${encodeURIComponent(igUserId)}/content_publishing_limit?${params.toString()}`);
+  if (!res.ok) throw await toMetaApiError(res, "Instagram publishing limit");
+  const body = (await res.json()) as { data?: Array<{ quota_usage?: number; config?: { quota_total?: number; quota_duration?: number } }> };
+  // The endpoint returns a single-element array describing this one account.
+  const window = body.data?.[0];
+  if (typeof window?.quota_usage !== "number" || typeof window.config?.quota_total !== "number") {
+    throw new Error("Instagram publishing limit response did not include quota fields");
+  }
+  return {
+    quotaUsage: window.quota_usage,
+    quotaTotal: window.config.quota_total,
+    quotaDurationSeconds: window.config.quota_duration ?? null,
+  };
+}
+
 export const instagramProvider: SocialProvider = {
   name: "instagram",
   requiredScopes: [
@@ -173,7 +229,16 @@ export const instagramProvider: SocialProvider = {
     }
     const publishData = (await publishRes.json()) as { id: string };
 
-    return { externalPostId: publishData.id, raw: publishData };
+    // Read the post back so the recorded result is the provider's own
+    // confirmation, not just media_publish's return value. A failed read must
+    // not fail the job: the post is already live, and a retry would duplicate it.
+    const verification = await fetchInstagramMedia(accessToken, publishData.id).catch(() => null);
+
+    return {
+      externalPostId: publishData.id,
+      permalink: verification?.permalink,
+      raw: { ...publishData, mediaContainerId: containerId, verification },
+    };
   },
 
   async getInsights(accessToken, externalPostId): Promise<InsightsResult> {

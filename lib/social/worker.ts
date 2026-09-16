@@ -129,6 +129,20 @@ export async function runWorkerBatch(options: { ownerId?: string } = {}): Promis
   return { workerId, processed: results.length, results };
 }
 
+/**
+ * Runs exactly one named, already-SCHEDULED job through the normal publish
+ * path (same shadow gate, token refresh, provider call and result recording
+ * as the cron batch). Used by paced campaign publishing, which must publish,
+ * confirm and record one post before moving to the next.
+ */
+export async function runScheduledJob(jobId: string): Promise<{ jobId: string; outcome: string }> {
+  const service = createSupabaseServiceClient();
+  const claimed = await tryClaimJob(service, jobId, WORKER_ID());
+  if (!claimed) throw new Error("Job is not available for execution.");
+  const outcome = await processJob(service, claimed);
+  return { jobId, outcome };
+}
+
 export async function runAuthorizedVerificationJob(input: {
   ownerId: string;
   jobId: string;
