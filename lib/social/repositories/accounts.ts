@@ -2,6 +2,7 @@ import { createSupabaseServiceClient } from "../../supabase/service.ts";
 import { encryptTokenPacked, decryptTokenPacked } from "../crypto.ts";
 import type { OwnerContext } from "../db-context.ts";
 import { type AgentActorContext, isTenantAgentContext } from "../agent-tenant-types.ts";
+import { ACCOUNT_BOUND_PLATFORMS, assertBoundProviderAccount } from "../oauth-account-binding.ts";
 
 type ServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 
@@ -111,7 +112,7 @@ export async function upsertConnectedAccount(
   if (input.tenantId) {
     const { data: existingTenantAccount, error: fetchErr } = await service
       .from("social_accounts")
-      .select("id, metadata")
+      .select("id, metadata, provider_account_id")
       .eq("tenant_id", input.tenantId)
       .eq("platform", input.platform)
       .limit(1)
@@ -122,6 +123,16 @@ export async function upsertConnectedAccount(
     }
 
     if (existingTenantAccount?.id) {
+      // A bound platform's tenant row keeps its provider account: a reconnect
+      // from any other login is rejected here, before the row or its token is
+      // touched, independent of whether the OAuth state carried a binding.
+      if (ACCOUNT_BOUND_PLATFORMS.has(input.platform)) {
+        assertBoundProviderAccount(
+          input.platform,
+          existingTenantAccount.provider_account_id as string | null,
+          input.providerAccountId
+        );
+      }
       const mergedMetadata = {
         ...((existingTenantAccount.metadata as Record<string, unknown>) ?? {}),
         ...omitNullish(input.metadata ?? {}),

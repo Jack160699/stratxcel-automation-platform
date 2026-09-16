@@ -6,6 +6,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { getCanonicalSocialRedirectUri } from "@/lib/social/oauth-origin";
 import { recordOAuthDiagnostic } from "@/lib/social/oauth-diagnostics";
+import { ACCOUNT_BOUND_PLATFORMS, resolveExpectedProviderAccountId } from "@/lib/social/oauth-account-binding";
+import { isTenantMember } from "@/lib/social/tenant-membership";
 
 /**
  * GET /api/social/oauth/:provider/connect
@@ -63,9 +65,10 @@ export async function GET(
     return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
   }
 
+  const service = createSupabaseServiceClient();
+
   let resolvedTenantId = tenantId;
   if (!resolvedTenantId && user) {
-    const service = createSupabaseServiceClient();
     const { data: mems } = await service
       .from("tenant_members")
       .select("tenant_id")
@@ -75,9 +78,34 @@ export async function GET(
     }
   }
 
-  const { token, hash, expiresAt } = createSignedState(provider, redirectTo, resolvedTenantId || undefined);
+  // Bind a reconnect to the provider account the tenant is already connected
+  // to, so the callback rejects consent approved from any other login. Only
+  // resolved for real members: a non-member's callback fails missing_tenant
+  // anyway, and the state payload is readable by the browser.
+  let expectedAccountId: string | undefined;
+  if (resolvedTenantId && ACCOUNT_BOUND_PLATFORMS.has(provider) && (await isTenantMember(service, resolvedTenantId, user.id))) {
+    try {
+      expectedAccountId = await resolveExpectedProviderAccountId(service, provider, resolvedTenantId);
+    } catch (err) {
+      recordOAuthDiagnostic({
+        provider,
+        stage: "connect_url",
+        status: "failure",
+        reason: "account_binding_lookup_failed",
+        error: err,
+      });
+      return NextResponse.json({ error: "Could not start OAuth flow" }, { status: 500 });
+    }
+  }
 
-  const service = createSupabaseServiceClient();
+  const { token, hash, expiresAt } = createSignedState(
+    provider,
+    redirectTo,
+    resolvedTenantId || undefined,
+    undefined,
+    expectedAccountId
+  );
+
   const { error } = await service.from("social_oauth_states").insert({
     provider,
     state_hash: hash,
@@ -104,7 +132,7 @@ export async function GET(
       provider,
       stage: "connect_url",
       status: "success",
-      details: { redirectUri, redirectTo },
+      details: { redirectUri, redirectTo, accountBound: Boolean(expectedAccountId) },
     });
     return NextResponse.redirect(authUrl);
   } catch (err) {

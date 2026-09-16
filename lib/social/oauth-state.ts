@@ -15,6 +15,19 @@ interface StatePayload {
   issuedAt: number;
   redirectTo?: string;
   tenantId?: string;
+  /**
+   * Explicit provider asset the connection must bind to (today: a Facebook
+   * Page ID). Signed into the state so the callback cannot be talked into
+   * binding a different Page than the operator selected, and so multi-Page
+   * operators stop silently connecting whichever Page Facebook lists first.
+   */
+  pageId?: string;
+  /**
+   * Provider account the tenant's existing connection is bound to (today:
+   * Instagram). Signed so the callback can reject consent approved by any
+   * other account instead of overwriting the tenant's connection with it.
+   */
+  expectedAccountId?: string;
 }
 
 function getSecret(): string {
@@ -32,7 +45,9 @@ function sign(payloadB64: string): string {
 export function createSignedState(
   provider: StatePayload["provider"],
   redirectTo?: string,
-  tenantId?: string
+  tenantId?: string,
+  pageId?: string,
+  expectedAccountId?: string
 ): { token: string; hash: string; expiresAt: Date } {
   const payload: StatePayload = {
     provider,
@@ -40,6 +55,8 @@ export function createSignedState(
     issuedAt: Date.now(),
     redirectTo,
     tenantId,
+    pageId,
+    expectedAccountId,
   };
   const payloadB64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const sig = sign(payloadB64);

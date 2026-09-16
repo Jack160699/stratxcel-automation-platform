@@ -9,6 +9,7 @@ import { upsertConnectedAccount, type Platform } from "@/lib/social/repositories
 import { recordAudit } from "@/lib/social/repositories/system";
 import { getCanonicalSocialRedirectUri } from "@/lib/social/oauth-origin";
 import { recordOAuthDiagnostic } from "@/lib/social/oauth-diagnostics";
+import { assertBoundProviderAccount, OAuthAccountMismatchError } from "@/lib/social/oauth-account-binding";
 import { createDevEncryptedVault } from "@stratxcel/byok";
 import { attemptAutoActivatePackageAutopilot } from "@/lib/social/package-autopilot";
 
@@ -201,6 +202,11 @@ export async function GET(
       origin,
     });
 
+    // Signed into the state at /connect from the tenant's existing connection:
+    // the account that approved consent must be exactly that account. Checked
+    // before every persistence branch, so a wrong login writes nothing.
+    assertBoundProviderAccount(provider, verified.payload.expectedAccountId, result.externalAccountId);
+
     recordOAuthDiagnostic({
       provider,
       stage: "identity_fetch",
@@ -335,6 +341,9 @@ export async function GET(
             }
           }
         } catch (upsertErr) {
+          // The persistence layer's own binding check: handled with the
+          // callback's mismatch outcome below, not as a generic write failure.
+          if (upsertErr instanceof OAuthAccountMismatchError) throw upsertErr;
           const errMsg = upsertErr instanceof Error ? upsertErr.message : "upsert_failed";
           console.error("oauth callback: tenant persistence failed:", errMsg);
           recordOAuthDiagnostic({
@@ -537,6 +546,23 @@ export async function GET(
 
     return NextResponse.redirect(adminTarget.toString());
   } catch (err) {
+    if (err instanceof OAuthAccountMismatchError) {
+      recordOAuthDiagnostic({
+        provider,
+        stage: "identity_fetch",
+        status: "failure",
+        reason: "account_mismatch",
+        details: { expectedAccountId: err.expectedAccountId, actualAccountId: err.actualAccountId },
+      });
+      await recordAudit({
+        actorType: "SYSTEM",
+        action: "account.connect_failed",
+        summary: `${provider} connect rejected: authorized account ${err.actualAccountId || "(unknown)"} is not the bound account ${err.expectedAccountId}; existing connection left unchanged`,
+        meta: { tenant_id: verified.payload.tenantId ?? null, expected_account_id: err.expectedAccountId, actual_account_id: err.actualAccountId },
+      }).catch(() => {});
+      return failRedirect("error", "account_mismatch");
+    }
+
     const message = err instanceof Error ? err.message : "unknown_error";
     console.error(`${provider} OAuth callback failed:`, message);
 
