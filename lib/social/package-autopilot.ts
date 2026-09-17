@@ -40,6 +40,8 @@ import { hasCapability, isPlanTier } from "@stratxcel/payments-and-wallet";
 import { getCurrentBrandBrain, getActiveServices } from "@stratxcel/brand-brain";
 import { createSocialAuditConnectorInsightsProvider } from "./audit-connector-insights.ts";
 import { buildVerifiedBusinessInformation } from "./package-business-facts.ts";
+import { resolveBusinessContact, type BusinessContactProfile } from "./business-contact.ts";
+import { ctaPromptGuidance } from "./caption-cta.ts";
 import { buildCreativeBrief, formatCreativeBriefForPrompt, selectObjective } from "./creative-brief.ts";
 import { deriveBusinessContentIntelligence } from "./business-intelligence.ts";
 import { buildCampaignStrategy } from "./campaign-strategy-planner.ts";
@@ -1262,6 +1264,8 @@ export async function prepareNearTermPackageItems(
   // shadowed per-item below (Section 5 research-driven recovery) for an
   // item on its last allowed recovery attempt, never mutated here.
   let businessInformationBatch: string[] = [];
+  // Canonical contact profile (Brand Brain) for CTA/contact rules; null when the tenant has no Brand Brain.
+  let businessContactBatch: BusinessContactProfile | null = null;
   if ((dueItems ?? []).length > 0) {
     const [brandBrainResult, connectorInsightsResult] = await Promise.allSettled([
       getCurrentBrandBrain(service as Parameters<typeof getCurrentBrandBrain>[0], authorization.tenant_id),
@@ -1271,6 +1275,7 @@ export async function prepareNearTermPackageItems(
     const insights = connectorInsightsResult.status === "fulfilled" ? connectorInsightsResult.value : null;
     const googleBusiness = insights?.googleBusiness.state === "available" ? insights.googleBusiness.data : null;
     businessInformationBatch = buildVerifiedBusinessInformation({ googleBusiness, brandBrain: brandBrain?.content ?? null });
+    businessContactBatch = brandBrain?.content ? resolveBusinessContact(brandBrain.content as Record<string, unknown>) : null;
 
     // STRATXCEL Master Execution Prompt Sections 16-17: real, grounded
     // competitor/social-trend research, gathered at most ONCE per real
@@ -1822,6 +1827,7 @@ export async function prepareNearTermPackageItems(
                   treatment.cta.needed ? `- CTA: ${treatment.cta.text}` : `- No CTA needed for this creative (${treatment.cta.rationale}) -- do not force one into the caption.`,
                 ].join("\n")
               : "",
+            platform ? `CALL-TO-ACTION AND CONTACT RULES:\n${ctaPromptGuidance(platform, businessContactBatch).map((rule) => `- ${rule}`).join("\n")}` : "",
             `Respond with ONLY strict JSON: {"title": string, "masterIdea": string, "caption": string, "hashtags": string[]}.`,
             `The "caption" value must read as natural, flowing social copy a person would actually write -- never insert a document-style section label (e.g. "Standards and Approach:", "Key Benefits:", "Summary:") anywhere inside it.`,
             correctiveInstructions.length
@@ -1856,6 +1862,8 @@ export async function prepareNearTermPackageItems(
           objective: brief.objective,
           recentCaptions,
           recentConcepts,
+          platform: platform ?? undefined,
+          contact: businessContactBatch,
         }),
       });
 

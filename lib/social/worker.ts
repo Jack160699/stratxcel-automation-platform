@@ -26,6 +26,42 @@ import { normalizeYouTubePrivacyStatus } from "./providers/youtube-visibility.ts
 import { resolveMediaForPublish } from "./repositories/media-assets.ts";
 import { recordAudit } from "./repositories/system.ts";
 import { verificationAuthorizationAllows } from "./verification-policy.ts";
+import { loadTenantBusinessContact } from "./business-contact.ts";
+import { summarizeCaptionIssues, validateCaptionForPublish } from "./caption-validation.ts";
+import type { StructuredCta } from "./caption-cta.ts";
+
+/** A caption that must not go live (bad links, unverified contact details, absolute claims). Never retried. */
+export class PrePublishValidationError extends Error {
+  constructor(summary: string) {
+    super(`Pre-publish validation failed: ${summary}`);
+    this.name = "PrePublishValidationError";
+  }
+}
+
+/**
+ * Validates the exact caption about to be published against the platform's
+ * link rules and the tenant's canonical contact profile, plus any creative
+ * text and structured CTA recorded on the variant.
+ */
+async function assertCaptionPublishable(
+  service: ServiceClient,
+  account: { id: string; platform: string },
+  variant: { creative_spec?: Record<string, unknown> | null },
+  caption: string
+) {
+  const { data: accountRow } = await service.from("social_accounts").select("tenant_id").eq("id", account.id).maybeSingle();
+  const tenantId = (accountRow?.tenant_id as string | null) ?? null;
+  const contact = tenantId ? await loadTenantBusinessContact(service, tenantId) : null;
+  const spec = variant.creative_spec ?? {};
+  const result = validateCaptionForPublish({
+    platform: account.platform,
+    caption,
+    contact,
+    creativeText: typeof spec.creative_text === "string" ? spec.creative_text : null,
+    cta: spec.cta && typeof spec.cta === "object" ? (spec.cta as StructuredCta) : null,
+  });
+  if (!result.ok) throw new PrePublishValidationError(summarizeCaptionIssues(result.issues));
+}
 
 /**
  * Publishing worker for the stratxcel schema. Called from two places:
@@ -312,6 +348,7 @@ async function processJob(
     let raw: unknown = { shadow: true, note: publishingDecision.reason };
 
     if (isLive) {
+      await assertCaptionPublishable(service, account, variant, caption);
       const prepared =
         preparedProvider && preparedAccessToken
           ? { provider: preparedProvider, accessToken: preparedAccessToken }
@@ -377,6 +414,7 @@ async function processJob(
     // happen after Google accepted the bytes but before its response reached
     // us, and replaying that request could create a duplicate video.
     const bounded =
+      err instanceof PrePublishValidationError ||
       Boolean(verification) ||
       accountPlatform === "youtube" ||
       (isMetaError && !err.retryable) ||

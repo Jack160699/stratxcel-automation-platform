@@ -22,6 +22,7 @@ const PUBLISH_OUTCOME_CHIP: Record<string, { label: string; state: ChipState }> 
   connection_not_ready: { label: "Connection not ready", state: "danger" },
   account_mismatch: { label: "Account mismatch", state: "danger" },
   shadow_mode: { label: "Shadow mode", state: "warning" },
+  validation_failed: { label: "Blocked by caption validation", state: "warning" },
   failed: { label: "Failed", state: "danger" },
   error: { label: "Error", state: "danger" },
 };

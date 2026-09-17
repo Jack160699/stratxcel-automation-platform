@@ -53,6 +53,8 @@ export interface CanonicalBrandContext {
   websiteUrl: string | null;
   location: string | null;
   phone: string | null;
+  /** WhatsApp contact number (`business_whatsapp`), when it differs from or supplements `phone`. */
+  whatsapp?: string | null;
   hours: string | null;
   /** Short, concise summary lines (Section 2) — descriptive context, never
    * treated as verified facts on their own. */
@@ -180,6 +182,7 @@ export function buildVerifiedFacts(content: BrandBrainContent | null | undefined
   push("Industry", str(content.industry));
   push("Location", str(content.location));
   push("Phone", str(content.business_phone));
+  push("WhatsApp", str(content.business_whatsapp));
   push("Business hours", str(content.business_hours));
   push("Website", str(content.website_url));
   push("Target audience", str(content.target_audience));
@@ -210,6 +213,7 @@ export function getCanonicalBrandContext(content: BrandBrainContent | null | und
     websiteUrl: str(c.website_url),
     location: str(c.location),
     phone: str(c.business_phone),
+    whatsapp: str(c.business_whatsapp),
     hours: str(c.business_hours),
     highlights: strArray(c.highlights),
     toneOfVoice: str(c.tone_of_voice),

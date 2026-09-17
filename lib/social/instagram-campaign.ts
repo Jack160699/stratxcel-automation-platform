@@ -11,6 +11,7 @@ export type CampaignItemStatus =
   | "SCHEDULED"
   | "BLOCKED_BY_PLATFORM_LIMIT"
   | "BLOCKED_CLAIM_REVIEW"
+  | "BLOCKED_CAPTION_VALIDATION"
   | "FORMAT_INELIGIBLE_FOR_INSTAGRAM_FEED"
   | "FAILED"
   | "NOT_ATTEMPTED";
@@ -33,6 +34,12 @@ export interface InstagramCampaignItemSpec {
   /** The only Instagram account this item may ever publish to. */
   expected_provider_account_id: string;
   platform_limit?: { blocked_at: string; quota_usage: number; quota_total: number } | null;
+  /** Structured CTA (text, destination, tracking) -- the caption shows only its platform display text. */
+  cta?: { type: string; displayText: string; destinationUrl: string; trackingUrl: string | null; platform: string } | null;
+  /** Contact text printed on the creative, checked against the business profile. */
+  creative_text?: string | null;
+  /** Latest pre-publish caption validation result. */
+  caption_validation?: { ok: boolean; issues: Array<{ code: string; evidence: string }>; validated_at: string } | null;
 }
 
 export interface CampaignJobFacts {
@@ -116,6 +123,14 @@ export function deriveCampaignItemStatus(spec: InstagramCampaignItemSpec, job: C
     }
   }
 
+  if (spec.caption_validation && spec.caption_validation.ok === false) {
+    return {
+      ...base,
+      status: "BLOCKED_CAPTION_VALIDATION",
+      at: spec.caption_validation.validated_at,
+      detail: spec.caption_validation.issues.map((issue) => `${issue.code}: ${issue.evidence}`).join("; ") || "Caption failed pre-publish validation",
+    };
+  }
   if (spec.platform_limit) {
     return {
       ...base,
@@ -129,7 +144,7 @@ export function deriveCampaignItemStatus(spec: InstagramCampaignItemSpec, job: C
 
 /** True when the item may be published now: eligible, cleared, and never published or attempted. */
 export function isPublishableCampaignItem(spec: InstagramCampaignItemSpec, job: CampaignJobFacts | null): boolean {
-  return spec.format_status === "FEED_ELIGIBLE" && spec.claim_review.status === "CLEARED" && job === null;
+  return spec.format_status === "FEED_ELIGIBLE" && spec.claim_review.status === "CLEARED" && spec.caption_validation?.ok !== false && job === null;
 }
 
 export interface CampaignSummary {
@@ -142,6 +157,7 @@ export interface CampaignSummary {
   blocked: number;
   blockedByPlatformLimit: number;
   blockedClaimReview: number;
+  blockedCaptionValidation: number;
   failed: number;
   notAttempted: number;
 }
@@ -151,6 +167,7 @@ export function summarizeCampaignItems(items: DerivedCampaignItemStatus[]): Camp
   const formatIneligible = count("FORMAT_INELIGIBLE_FOR_INSTAGRAM_FEED");
   const blockedByPlatformLimit = count("BLOCKED_BY_PLATFORM_LIMIT");
   const blockedClaimReview = count("BLOCKED_CLAIM_REVIEW");
+  const blockedCaptionValidation = count("BLOCKED_CAPTION_VALIDATION");
   return {
     total: items.length,
     feedEligible: items.length - formatIneligible,
@@ -158,9 +175,10 @@ export function summarizeCampaignItems(items: DerivedCampaignItemStatus[]): Camp
     published: count("PUBLISHED"),
     providerVerified: items.filter((item) => item.status === "PUBLISHED" && item.providerVerified).length,
     scheduled: count("SCHEDULED"),
-    blocked: blockedByPlatformLimit + blockedClaimReview,
+    blocked: blockedByPlatformLimit + blockedClaimReview + blockedCaptionValidation,
     blockedByPlatformLimit,
     blockedClaimReview,
+    blockedCaptionValidation,
     failed: count("FAILED"),
     notAttempted: count("NOT_ATTEMPTED"),
   };

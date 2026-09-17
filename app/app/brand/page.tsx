@@ -21,6 +21,8 @@ interface BrandBrainContent {
   location?: string;
   /** Shop-facing contact number — StratXcel App reference's Location & Hours row. Distinct from the WhatsApp OTP-verified number (Connected Accounts); this is a plain display field for the shop's public phone line, no verification. */
   business_phone?: string;
+  /** Shop-facing WhatsApp number used in social CTAs, when it differs from the phone line. Social copy may only show numbers configured here or in business_phone. */
+  business_whatsapp?: string;
   /** Optional shop-facing email — "email where supported" (Brand Brain Final UX + Data + Save System §6). Never required; not every business wants a public inbox. */
   business_email?: string;
   /** Weekly hours as one free-text line (e.g. "Mon–Sat: 8:00 AM – 9:30 PM") — kept as a single field like every other Brand Brain string, not a structured per-day schema. */
@@ -406,6 +408,9 @@ export default function BrandPage() {
               <div className="grid gap-3.5 sm:grid-cols-2">
                 <Field label="Phone number">
                   <Input value={content.business_phone ?? ""} placeholder="+91 98250 12345" onChange={(e) => field("business_phone", e.target.value)} />
+                </Field>
+                <Field label="WhatsApp number (if different)">
+                  <Input value={content.business_whatsapp ?? ""} placeholder="+91 98250 12345" onChange={(e) => field("business_whatsapp", e.target.value)} />
                 </Field>
                 <Field label="Email (optional)">
                   <Input type="email" value={content.business_email ?? ""} placeholder="hello@yourbusiness.in" onChange={(e) => field("business_email", e.target.value)} />

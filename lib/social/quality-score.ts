@@ -23,6 +23,8 @@ import { getIndustryProfile, checkTargetIndustryContamination } from "./industry
 import type { ContentObjective } from "./content-options.ts";
 import { findPlaceholderOrFiller } from "./placeholder-detection.ts";
 import { checkRepetition, type CreativeFingerprint } from "./content-diversity.ts";
+import { validateCaptionForPublish, type CaptionIssueCode } from "./caption-validation.ts";
+import type { BusinessContactProfile } from "./business-contact.ts";
 
 /**
  * Hard Anti-Template Rule (Mission G §10) -- exported (Creative Generation
@@ -68,7 +70,11 @@ export type QualityFailureReason =
   | "BRAND_CONTEXT_MISSING"
   | "TARGET_INDUSTRY_CONTAMINATION"
   | "LEAKED_TEMPLATE_LABEL"
-  | "FABRICATED_OFFER";
+  | "FABRICATED_OFFER"
+  | "INVALID_CTA_LINK"
+  | "CONTACT_MISMATCH"
+  | "ABSOLUTE_CLAIM"
+  | "LANGUAGE_QUALITY";
 
 export interface QualityFailure {
   reason: QualityFailureReason;
@@ -123,7 +129,24 @@ export interface QualityScoreInput {
   /** Recent generated captions for this tenant/authorization, newest first. */
   recentCaptions?: string[];
   recentConcepts?: string[];
+  /** Target platform; enables platform link rules (e.g. no raw URLs on Instagram). */
+  platform?: string;
+  /** Canonical tenant contact profile; enables contact-number consistency checks. */
+  contact?: BusinessContactProfile | null;
 }
+
+const CAPTION_ISSUE_FAILURE: Record<CaptionIssueCode, QualityFailureReason> = {
+  RAW_URL_IN_CAPTION: "INVALID_CTA_LINK",
+  WHATSAPP_LINK_IN_CAPTION: "INVALID_CTA_LINK",
+  MALFORMED_URL: "INVALID_CTA_LINK",
+  LINK_IN_BIO_WITHOUT_DESTINATION: "INVALID_CTA_LINK",
+  CTA_DESTINATION_MISSING: "INVALID_CTA_LINK",
+  TRACKING_PARAMS_MISSING: "INVALID_CTA_LINK",
+  UNKNOWN_CONTACT_NUMBER: "CONTACT_MISMATCH",
+  CONFLICTING_CONTACT_NUMBERS: "CONTACT_MISMATCH",
+  ABSOLUTE_CLAIM: "ABSOLUTE_CLAIM",
+  TRANSLITERATION_ERROR: "LANGUAGE_QUALITY",
+};
 
 export interface QualityScoreResult {
   score: number;
@@ -305,6 +328,16 @@ export function scoreGeneratedContent(input: QualityScoreInput): QualityScoreRes
   const contamination = checkTargetIndustryContamination(caption, input.industry);
   if (contamination.isContaminated) {
     hardFailures.push({ reason: "TARGET_INDUSTRY_CONTAMINATION", detail: contamination.reason ?? "reads as though the business belongs to a different industry" });
+  }
+
+  // --- Hard-fail: platform link rules, contact consistency, absolute claims
+  // and language slips -- the same validator the publisher enforces, so a
+  // caption that would be blocked at publish time is corrected here instead. ---
+  if (input.platform) {
+    const captionCheck = validateCaptionForPublish({ platform: input.platform, caption, contact: input.contact ?? null });
+    for (const issue of captionCheck.issues) {
+      hardFailures.push({ reason: CAPTION_ISSUE_FAILURE[issue.code], detail: `${issue.message}: "${issue.evidence}"` });
+    }
   }
 
   // --- Hard-fail: no discernible CTA at all. ---

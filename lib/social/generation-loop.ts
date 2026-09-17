@@ -30,6 +30,10 @@ const CORRECTIVE_INSTRUCTION: Record<QualityFailureReason, (detail: string) => s
   FORBIDDEN_CLAIM: (detail) => `Remove this phrase, which is forbidden by brand rules: ${detail}.`,
   LEAKED_TEMPLATE_LABEL: (detail) => `Rewrite this: ${detail}. The caption must read as one continuous piece of natural social copy -- never a section label followed by a colon, like a document heading.`,
   FABRICATED_OFFER: (detail) => `Remove this: ${detail}. Never invent a promotion, discount, festive offer, early-access slot, or limited-availability claim that is not in the verified business facts -- write about the real business instead of an imagined offer.`,
+  INVALID_CTA_LINK: (detail) => `Fix this call-to-action: ${detail}. Do not type URLs, domains or wa.me links into the caption on this platform -- write the action as text (e.g. "... — link in bio.") and only reference a destination the business actually has.`,
+  CONTACT_MISMATCH: (detail) => `Fix the contact details: ${detail}. Use only the business's configured phone/WhatsApp number exactly as given, or no number at all.`,
+  ABSOLUTE_CLAIM: (detail) => `Rewrite without an absolute outcome promise: ${detail}. Use qualified wording such as "significantly reduce ho sakta hai" -- never promise a zero bill, only-fixed-charges bill, guaranteed or 100% saving.`,
+  LANGUAGE_QUALITY: (detail) => `Fix this wording: ${detail}. Write natural Hinglish (e.g. "chhat" for roof, never "chat").`,
 };
 
 /** A failure reason that no amount of rewriting the copy can fix -- retrying

@@ -9,6 +9,9 @@ import {
 } from "./instagram-campaign.ts";
 import { OAuthAccountMismatchError, assertBoundProviderAccount } from "./oauth-account-binding.ts";
 import type { InstagramMedia, InstagramPublishingLimit } from "./providers/instagram.ts";
+import type { BusinessContactProfile } from "./business-contact.ts";
+import type { StructuredCta } from "./caption-cta.ts";
+import { summarizeCaptionIssues, validateCaptionForPublish } from "./caption-validation.ts";
 
 /**
  * Paced Instagram campaign publishing: exactly ONE campaign item per call.
@@ -18,7 +21,10 @@ import type { InstagramMedia, InstagramPublishingLimit } from "./providers/insta
  *   3. the owner is in live mode (a shadow run would only simulate),
  *   4. the token can read the publishing quota (live proof of the publish
  *      permission) and the quota is not exhausted,
- *   5. the item is not already on Instagram (a lost response must not become
+ *   5. the exact caption passes pre-publish validation (platform link rules,
+ *      canonical contact numbers, absolute claims) -- a failing item is
+ *      recorded as blocked and skipped, never published,
+ *   6. the item is not already on Instagram (a lost response must not become
  *      a duplicate post),
  * then publishes through the normal worker path and reads the post back from
  * Instagram before reporting it published.
@@ -32,6 +38,7 @@ export type CampaignPublishOutcome =
   | "connection_not_ready"
   | "account_mismatch"
   | "shadow_mode"
+  | "validation_failed"
   | "failed";
 
 export interface CampaignPublishStep {
@@ -47,6 +54,7 @@ export interface CampaignPublishStep {
 }
 
 export interface CampaignPublisherDeps {
+  loadContact(tenantId: string): Promise<BusinessContactProfile | null>;
   getAccessToken(account: { id: string; platform: string }): Promise<string>;
   fetchPublishingLimit(accessToken: string, igUserId: string): Promise<InstagramPublishingLimit>;
   listRecentMedia(accessToken: string, igUserId: string): Promise<InstagramMedia[]>;
@@ -59,6 +67,7 @@ export interface CampaignPublisherDeps {
 interface CampaignItemRow {
   variantId: string;
   caption: string;
+  hashtags: string[];
   spec: InstagramCampaignItemSpec;
   job: (CampaignJobFacts & { id: string }) | null;
 }
@@ -75,14 +84,19 @@ async function loadCampaignItems(service: SupabaseClient, tenantId: string, camp
 
   const { data: variants, error: vErr } = await service
     .from("content_variants")
-    .select("id, caption, creative_spec")
+    .select("id, caption, hashtags, creative_spec")
     .in("master_id", masterIds)
     .eq("platform", "instagram");
   if (vErr) throw new Error(`Failed to load campaign variants: ${vErr.message}`);
 
   const items = (variants ?? [])
-    .map((v) => ({ variantId: v.id as string, caption: (v.caption as string) ?? "", spec: parseCampaignItemSpec(v.creative_spec) }))
-    .filter((v): v is { variantId: string; caption: string; spec: InstagramCampaignItemSpec } => v.spec !== null && v.spec.campaign_id === campaignId);
+    .map((v) => ({
+      variantId: v.id as string,
+      caption: (v.caption as string) ?? "",
+      hashtags: (v.hashtags as string[] | null) ?? [],
+      spec: parseCampaignItemSpec(v.creative_spec),
+    }))
+    .filter((v): v is { variantId: string; caption: string; hashtags: string[]; spec: InstagramCampaignItemSpec } => v.spec !== null && v.spec.campaign_id === campaignId);
   if (items.length === 0) return [];
 
   // Jobs only count when they belong to this tenant's own account.
@@ -158,6 +172,34 @@ export async function publishNextCampaignItem(
     return { ...stepBase, outcome: "shadow_mode", message: "Owner is in shadow mode; a publish would only be simulated." };
   }
 
+  // The exact text the worker will publish: caption, then hashtags.
+  const publishedCaption = [next.caption, next.hashtags.map((tag) => `#${tag.replace(/^#/, "")}`).join(" ")].filter(Boolean).join("\n\n");
+  const captionCheck = validateCaptionForPublish({
+    platform: "instagram",
+    caption: publishedCaption,
+    contact: await deps.loadContact(input.tenantId),
+    creativeText: next.spec.creative_text ?? null,
+    cta: (next.spec.cta as StructuredCta | null | undefined) ?? null,
+  });
+  if (!captionCheck.ok) {
+    const validatedAt = deps.now().toISOString();
+    await service
+      .from("content_variants")
+      .update({
+        creative_spec: { ...next.spec, caption_validation: { ok: false, issues: captionCheck.issues.map(({ code, evidence }) => ({ code, evidence })), validated_at: validatedAt } },
+        updated_at: validatedAt,
+      })
+      .eq("id", next.variantId);
+    const message = summarizeCaptionIssues(captionCheck.issues);
+    await deps.audit({
+      actorId: input.actorUserId,
+      action: "social.campaign.validation_failed",
+      summary: `${next.spec.asset_name} blocked before publishing: ${message}`.slice(0, 500),
+      meta: { tenant_id: input.tenantId, campaign_id: input.campaignId, variant_id: next.variantId, codes: captionCheck.issues.map((i) => i.code) },
+    });
+    return { ...stepBase, outcome: "validation_failed", message };
+  }
+
   const igUserId = account.provider_account_id as string;
   let accessToken: string;
   let limit: InstagramPublishingLimit;
@@ -189,7 +231,11 @@ export async function publishNextCampaignItem(
 
   // The item is publishable only while it has no job, so a stale
   // platform_limit marker from an earlier window is cleared as it proceeds.
-  const spec: InstagramCampaignItemSpec = { ...next.spec, platform_limit: null };
+  const spec: InstagramCampaignItemSpec = {
+    ...next.spec,
+    platform_limit: null,
+    caption_validation: { ok: true, issues: [], validated_at: deps.now().toISOString() },
+  };
 
   const recent = await deps.listRecentMedia(accessToken, igUserId);
   const existing = recent.find((media) => typeof media.caption === "string" && media.caption.includes(spec.dedupe_marker));

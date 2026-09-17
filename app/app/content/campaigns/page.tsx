@@ -15,6 +15,7 @@ const STATUS_CHIP: Record<CampaignItemStatus, { label: string; state: ChipState 
   SCHEDULED: { label: "Scheduled", state: "accent" },
   BLOCKED_BY_PLATFORM_LIMIT: { label: "Blocked · Instagram limit", state: "warning" },
   BLOCKED_CLAIM_REVIEW: { label: "Blocked · claim review", state: "warning" },
+  BLOCKED_CAPTION_VALIDATION: { label: "Blocked · caption validation", state: "warning" },
   FORMAT_INELIGIBLE_FOR_INSTAGRAM_FEED: { label: "Not feed format", state: "neutral" },
   FAILED: { label: "Failed", state: "danger" },
   NOT_ATTEMPTED: { label: "Not attempted", state: "dashed" },

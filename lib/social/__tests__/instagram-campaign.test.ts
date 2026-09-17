@@ -156,6 +156,9 @@ function seed(overrides: { dbsAccount?: Partial<Row>; settings?: Row[]; variants
 function deps(db: ReturnType<typeof createDb>, overrides: Partial<CampaignPublisherDeps> = {}) {
   const calls = { runJob: [] as string[], tokenFor: [] as string[], audits: [] as string[] };
   const d: CampaignPublisherDeps = {
+    async loadContact() {
+      return { businessName: "Durg Bhilai Solar", websiteUrl: "https://www.example-dbs.in/", callNumber: null, whatsappNumber: null };
+    },
     async getAccessToken(account) { calls.tokenFor.push(account.id); return "token-for-" + account.id; },
     async fetchPublishingLimit() { return { quotaUsage: 3, quotaTotal: 100, quotaDurationSeconds: 86400 }; },
     async listRecentMedia() { return []; },
@@ -289,6 +292,29 @@ const input = { tenantId: DBS_TENANT, campaignId: CAMPAIGN, actorUserId: "staff-
   assert.equal(step.outcome, "nothing_to_publish");
   assert.equal(calls.runJob.length, 0, "a failed item is not silently retried");
   console.log("  ok  failed items are not auto-retried; nothing_to_publish when done");
+}
+
+// 12b. A caption that fails pre-publish validation is blocked, recorded and skipped -- no job, no publish.
+{
+  const variants = seed().content_variants.map((v) =>
+    v.id === "v-a" ? { ...v, caption: "Check https://www.example-dbs.in/?utm_source=instagram and call +91 77777 00000 utm_content=post-a" } : v
+  );
+  const db = createDb(seed({ variants }));
+  const { d, calls } = deps(db);
+  const step = await publishNextCampaignItem(db.service, input, d);
+  assert.equal(step.outcome, "validation_failed");
+  assert.equal(step.assetName, "post-a.jpg");
+  assert.ok(step.message?.includes("RAW_URL_IN_CAPTION") && step.message.includes("UNKNOWN_CONTACT_NUMBER"));
+  assert.equal(calls.runJob.length + calls.tokenFor.length, 0, "nothing is published and no token is read");
+  assert.equal(db.tables.social_publishing_jobs.length, 0);
+  const blocked = db.tables.content_variants.find((v) => v.id === "v-a")!;
+  assert.equal(blocked.creative_spec.caption_validation.ok, false);
+  assert.equal(deriveCampaignItemStatus(blocked.creative_spec, null).status, "BLOCKED_CAPTION_VALIDATION");
+
+  const next = await publishNextCampaignItem(db.service, input, d);
+  assert.equal(next.assetName, "post-b.jpg", "the blocked item no longer holds up the queue");
+  assert.equal(next.outcome, "published");
+  console.log("  ok  invalid caption blocked before publishing; queue moves to the next valid item");
 }
 
 // 13-14. Provider: quota parsing, and publish() reads the post back without failing a live post.
