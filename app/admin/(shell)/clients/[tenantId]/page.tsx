@@ -6,7 +6,7 @@ import { Metric } from "@/components/ui/Metric";
 import { StatusChip, type ChipState } from "@/components/ui/StatusChip";
 import { EmptyState } from "@/components/ui/Feedback";
 import { viewClientWorkspaceAction } from "./staff-workspace-actions";
-import { publishNextCampaignItemAction } from "./campaign-actions";
+import { publishNextCampaignItemAction, runTenantWorkerNowAction } from "./campaign-actions";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { loadTenantInstagramCampaigns } from "@/lib/social/instagram-campaign-inventory";
 
@@ -141,6 +141,28 @@ export default async function ClientDetailPage({
           </form>
         </Card>
       ))}
+
+      {param("workerOutcome") && (
+        <Card>
+          <p className="text-sm text-sx-text-muted">
+            Worker run: {param("workerOutcome")} · processed {param("processed") ?? "0"}
+            {param("firstResult") ? ` · ${param("firstResult")}` : ""}
+            {param("message") ? ` · ${param("message")}` : ""}
+          </p>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeading>Publishing worker</CardHeading>
+        <p className="text-sm text-sx-text-muted">
+          Runs this tenant&apos;s own due, SCHEDULED jobs through the canonical worker -- for a job outside the campaign inventory above (e.g. a recovered one-off job).
+        </p>
+        <form action={runTenantWorkerNowAction.bind(null, tenantId)} className="pt-3">
+          <button type="submit" className="rounded-sx-sm bg-sx-surface-2 px-4 py-2.5 text-sm font-semibold text-sx-text hover:bg-sx-border">
+            Run worker now for this tenant
+          </button>
+        </form>
+      </Card>
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Link href={`/admin/missions?tenantId=${tenantId}`} className="rounded-sx-md border border-sx-border bg-sx-surface-1 p-4 transition-colors hover:border-sx-border-strong"><p className="text-[13px] font-medium text-sx-text">All missions →</p></Link>
